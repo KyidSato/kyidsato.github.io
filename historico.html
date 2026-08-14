@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buffer Meli - Histórico de Liberação</title>
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- BARRA DE NAVEGAÇÃO -->
+    <nav class="main-navbar">
+        <div class="nav-brand">📦 <strong>Buffer Meli</strong></div>
+        <div class="nav-links">
+            <a href="index.html" class="nav-btn">🗺️ Layout Buffer</a>
+            <a href="consulta.html" class="nav-btn">🔍 Consulta e Análise</a>
+            <a href="dashboard.html" class="nav-btn">📊 Dashboard</a>
+            <a href="historico.html" class="nav-btn active">📋 Histórico</a>
+            <button type="button" class="nav-btn btn-config-link" onclick="abrirConfiguracoes()">⚙️ Configurações</button>
+        </div>
+    </nav>
+
+    <main class="app-container">
+        <!-- CABEÇALHO -->
+        <header class="page-header">
+            <div class="header-title">
+                <h1>📋 Histórico de Liberação de MUs</h1>
+                <p>Consulta e rastreabilidade de unidades liberadas do buffer</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="exportarExcel()">📥 Exportar Planilha</button>
+                <button class="btn btn-primary" onclick="window.location.href='index.html'">⬅️ Voltar ao Layout</button>
+            </div>
+        </header>
+
+        <!-- CARTÕES DE MÉTRICAS RÁPIDAS (KPIs) -->
+        <section class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-label">Total de MUs Liberadas</span>
+                <div class="kpi-value" id="kpi-total-mus">0</div>
+                <span class="kpi-sub">Histórico carregado</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-label">Total de Paletes</span>
+                <div class="kpi-value" id="kpi-total-pallets">0</div>
+                <span class="kpi-sub">Paletes despachados</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-label">Média de Ações</span>
+                <div class="kpi-value highlight" id="kpi-media-acoes">0</div>
+                <span class="kpi-sub">Ações realizadas por MU</span>
+            </div>
+        </section>
+
+        <!-- BARRA DE FILTROS E BUSCA -->
+        <section class="filter-bar">
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search-input" placeholder="Buscar por MU (Ex: MU-TT-RC-20A-123), Usuário ou ID Palete...">
+            </div>
+
+            <div class="filter-group">
+                <div class="filter-item">
+                    <label for="filter-date">Data:</label>
+                    <input type="date" id="filter-date">
+                </div>
+
+                <div class="filter-item">
+                    <label for="filter-user">Operador:</label>
+                    <select id="filter-user">
+                        <option value="">Todos os Operadores</option>
+                        <option value="Maycon Sato">Maycon Sato</option>
+                        <option value="Wilton">Wilton</option>
+                        <option value="Gesleane Morais">Gesleane Morais</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-filter" onclick="aplicarFiltros()">Filtrar</button>
+            </div>
+        </section>
+
+        <!-- TABELA DE HISTÓRICO -->
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Código MU</th>
+                        <th>ID do Palete</th>
+                        <th>Data e Hora Liberação</th>
+                        <th>Operador / Usuário</th>
+                        <th>Ações Realizadas</th>
+                        <th>Tempo no Buffer</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table-body">
+                    <tr><td colspan="6" style="text-align: center;">Carregando dados da planilha... ⏳</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- RODAPÉ DA PAGINAÇÃO -->
+        <footer class="pagination-footer">
+            <span class="pagination-info">Mostrando <strong>1 - 4</strong> de <strong>142</strong> registros</span>
+            <div class="pagination-controls">
+                <button class="btn-page" disabled>Anterior</button>
+                <button class="btn-page active">1</button>
+                <button class="btn-page">2</button>
+                <button class="btn-page">3</button>
+                <button class="btn-page">Próximo</button>
+            </div>
+        </footer>
+    </main>
+
+    <div id="config-modal" class="config-overlay" style="display: none;">
+        <div class="config-card">
+            <div class="config-header">
+                <h3>⚙️ Configurações do Operador</h3>
+                <button type="button" class="close-btn" onclick="fecharConfiguracoes()">&times;</button>
+            </div>
+            <div class="config-section">
+                <h4>📊 Sessão Ativa</h4>
+                <div class="info-row">
+                    <span>Usuário:</span>
+                    <strong id="cfg-user-name">-</strong>
+                </div>
+                <div class="info-row">
+                    <span>Tempo Logado:</span>
+                    <strong id="cfg-session-timer" class="timer-badge">00:00:00</strong>
+                </div>
+            </div>
+            <div class="config-section">
+                <h4>🎨 Tema do Sistema</h4>
+                <div class="theme-buttons">
+                    <button type="button" class="theme-btn dark" onclick="mudarTema('dark')">Dark</button>
+                    <button type="button" class="theme-btn light" onclick="mudarTema('light')">Light</button>
+                    <button type="button" class="theme-btn meli" onclick="mudarTema('meli')">Meli</button>
+                </div>
+            </div>
+            <div class="config-section">
+                <h4>🔒 Alterar Senha</h4>
+                <form onsubmit="alterarSenhaOperador(event)">
+                    <div class="input-group">
+                        <label>Senha Atual</label>
+                        <input type="password" id="cfg-old-pass" placeholder="••••••••" required>
+                    </div>
+                    <div class="input-group">
+                        <label>Nova Senha</label>
+                        <input type="password" id="cfg-new-pass" placeholder="••••••••" required>
+                    </div>
+                    <button type="submit" class="btn-config primary">Salvar Nova Senha</button>
+                </form>
+            </div>
+            <div class="config-footer">
+                <button type="button" class="btn-config danger" onclick="realizarLogout()">Encerrar Sessão</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

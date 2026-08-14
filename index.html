@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buffer Meli - Layout</title>
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- CAMADA VISUAL DE BLOQUEIO DE ACESSO -->
+<div id="auth-system-container" class="auth-overlay">
+    <div class="auth-card">
+        <div class="auth-header">
+            <h2>Buffer Meli Operacional</h2>
+            <p>Acesso Restrito à Operação WMS</p>
+        </div>
+
+        <!-- Abas de Navegação -->
+        <div class="auth-tabs">
+            <button type="button" class="tab-btn active" onclick="switchAuthTab('login')">Login</button>
+            <button type="button" class="tab-btn" onclick="switchAuthTab('register')">Cadastrar</button>
+            <button type="button" class="tab-btn" onclick="switchAuthTab('info')">Info</button>
+            <button type="button" class="tab-btn" onclick="switchAuthTab('status')">Status</button>
+        </div>
+
+        <!-- Conteúdo: Aba Login -->
+        <div id="tab-login" class="auth-tab-content active">
+            <form onsubmit="realizarLogin(event)">
+                <div class="input-group">
+                    <label>Usuário / Matrícula</label>
+                    <input type="text" id="login-username" placeholder="Ex: ml-colaborador" required autocomplete="username">
+                </div>
+                <div class="input-group">
+                    <label>Senha</label>
+                    <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn-auth primary">Acessar Sistema</button>
+            </form>
+        </div>
+
+        <!-- Conteúdo: Aba Cadastrar -->
+        <div id="tab-register" class="auth-tab-content">
+            <form onsubmit="realizarCadastro(event)">
+                <div class="input-group">
+                    <label>Nome Completo</label>
+                    <input type="text" id="reg-fullname" placeholder="Ex: Maycon Sato" required>
+                </div>
+                <div class="input-group">
+                    <label>Usuário / Matrícula</label>
+                    <input type="text" id="reg-username" placeholder="Ex: ml-colaborador" required>
+                </div>
+                <div class="input-group">
+                    <label>Senha</label>
+                    <input type="password" id="reg-password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn-auth secondary">Cadastrar Operador</button>
+            </form>
+        </div>
+
+        <!-- Conteúdo: Aba Info do App -->
+        <div id="tab-info" class="auth-tab-content">
+            <div class="info-box">
+                <h4>Buffer Meli Operacional</h4>
+                <p><strong>Uso exclusivo:</strong> Controle de fluxo de MUs e triagem de paletes WMS.</p>
+            </div>
+        </div>
+
+        <!-- Conteúdo: Aba Status do App -->
+        <div id="tab-status" class="auth-tab-content">
+            <div class="status-box">
+                <p>🟢 <strong>Servidor WMS:</strong> Operacional</p>
+                <p>🔄 <strong>Sincronização:</strong> Ativa</p>
+                <p id="auth-status-user">👤 <strong>Usuário Ativo:</strong> Bloqueado</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <!-- MODAL DE RESUMO DO PALETE (Refatorado para as classes nativas do CSS) -->
+    <div id="pallet-modal" class="pallet-modal-overlay hidden">
+        <div class="pallet-modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">📦 Resumo do Palete</h3>
+                <button type="button" class="close-btn" onclick="fecharModalPalete()">&times;</button>
+            </div>
+            <div id="modal-content" class="status-info">
+                <!-- Conteúdo injetado via JS -->
+            </div>
+            <div style="text-align:right; margin-top: 16px;">
+                <button type="button" class="btn btn-primary" onclick="fecharModalPalete()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BARRA DE NAVEGAÇÃO -->
+    <nav class="main-navbar">
+        <div class="nav-brand">📦 <strong>Buffer Meli</strong></div>
+        <div class="nav-links">
+            <a href="index.html" class="nav-btn active">🗺️ Layout Buffer</a>
+            <a href="consulta.html" class="nav-btn">🔍 Consulta e Análise</a>
+            <a href="dashboard.html" class="nav-btn">📊 Dashboard</a>
+            <a href="historico.html" class="nav-btn">📋 Histórico</a>
+            <button type="button" class="nav-btn btn-config-link" onclick="abrirConfiguracoes()">⚙️ Configurações</button>
+        </div>
+    </nav>
+
+    <div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <aside id="notification-panel" class="notification-panel hidden" aria-live="polite" aria-atomic="true">
+        <div class="notification-panel-header">
+            <h3>📢 Avisos operacionais</h3>
+            <button type="button" class="notification-close" onclick="fecharPainelNotificacoes()">×</button>
+        </div>
+        <div id="notification-list" class="notification-list"></div>
+    </aside>
+
+    <main class="app-container">
+        <div id="app-status" class="app-status" aria-live="polite">📌 Sistema pronto para operação.</div>
+        <!-- GRID PRINCIPAL DO MAPA DO BUFFER -->
+        <div class="container">
+
+            <!-- 1. ZONA VERDE (Expedição / Saída) -->
+            <section class="zone green-zone">
+                <div class="zone-header">
+                    <h2>🟢 Expedição</h2>
+                    <span>Capacidade: 12 Pallets</span>
+                </div>
+                <div class="pallet-row green-row" 
+                     id="green-stack" 
+                     ondragover="allowDrop(event)" 
+                     ondrop="dropPalletGreen(event, this)">
+                </div>
+
+                <!-- Botão de Despacho na Zona Verde -->
+                <div class="zone-actions green-actions">
+                    <button type="button" class="btn-action" onclick="triggerAction('Despachar PL')">
+                        🚚 Despachar Pallet
+                    </button>
+                </div>
+            </section>
+
+            <!-- 2. ZONA CINZA (Canalização em Ruas) -->
+            <section class="zone gray-zone">
+                <div class="zone-header">
+                    <h2>🔘 Canalização</h2>
+                    <span>Capacidade: 6 Pallets / Rua</span>
+                </div>
+                <div class="streets-container">
+                    <div class="street-lane">
+                        <span class="lane-title">Rua A</span>
+                        <div class="pallet-row" data-lane="R-A" ondragover="allowDrop(event)" ondrop="dropPallet(event, this)"></div>
+                    </div>
+                    <div class="street-lane">
+                        <span class="lane-title">Rua B</span>
+                        <div class="pallet-row" data-lane="R-B" ondragover="allowDrop(event)" ondrop="dropPallet(event, this)"></div>
+                    </div>
+                    <div class="street-lane">
+                        <span class="lane-title">Rua C</span>
+                        <div class="pallet-row" data-lane="R-C" ondragover="allowDrop(event)" ondrop="dropPallet(event, this)"></div>
+                    </div>
+                    <div class="street-lane">
+                        <span class="lane-title">Rua D</span>
+                        <div class="pallet-row" data-lane="R-D" ondragover="allowDrop(event)" ondrop="dropPallet(event, this)"></div>
+                    </div>
+                    <div class="street-lane">
+                        <span class="lane-title">Rua E</span>
+                        <div class="pallet-row" data-lane="R-E" ondragover="allowDrop(event)" ondrop="dropPallet(event, this)"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. ZONA AMARELA (Triagem / Check-in) -->
+            <section class="zone yellow-zone">
+                <div class="zone-header">
+                    <h2>🟡 Triagem</h2>
+                    <span>Capacidade: 6 Pallets</span>
+                </div>
+                <div class="pallet-row yellow-stack" 
+                     id="yellow-stack" 
+                     ondragover="allowDrop(event)" 
+                     ondrop="dropPalletYellow(event, this)">
+                </div>
+
+                <!-- Botões de Ação na Zona Amarela -->
+                <div class="zone-actions yellow-actions">
+                    <button type="button" class="btn-action" onclick="triggerAction('Checagem HH')">
+                        📱 Finalizar Separação HH
+                    </button>
+                    <button type="button" class="btn-action" onclick="triggerAction('Cadastrar MU')">
+                        📦 Cadastrar MU
+                    </button>
+                    <button type="button" class="btn-action" onclick="triggerAction('Vincular ID')">
+                        🔗 Vincular ID
+                    </button>
+                </div>
+            </section>
+
+            <!-- 4. ZONA VERMELHA (Entrada Dinâmica) -->
+            <section class="zone red-zone">
+                <div class="zone-header">
+                    <h2>🔴 Pendentes</h2>
+                    <span>Capacidade: <span id="red-count">0</span>/10 Pallets</span>
+                    <div class="red-controls">
+                        <button type="button" class="btn-control add" onclick="addRedPallet()" title="Adicionar Pallet">+</button>
+                        <button type="button" class="btn-control remove" onclick="removeRedPallet()" title="Remover Pallet">-</button>
+                    </div>
+                </div>
+                <div class="pallet-row red-stack" 
+                     id="red-stack" 
+                     ondragover="allowDrop(event)" 
+                     ondrop="dropPalletRed(event, this)">
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- MODAL DE CONFIGURAÇÕES DO USUÁRIO -->
+<div id="config-modal" class="config-overlay" style="display: none;">
+    <div class="config-card">
+        <div class="config-header">
+            <h3>⚙️ Configurações do Operador</h3>
+            <button type="button" class="close-btn" onclick="fecharConfiguracoes()">&times;</button>
+        </div>
+
+        <!-- Seção 1: Status e Sessão -->
+        <div class="config-section">
+            <h4>📊 Sessão Ativa</h4>
+            <div class="info-row">
+                <span>Usuário:</span>
+                <strong id="cfg-user-name">-</strong>
+            </div>
+            <div class="info-row">
+                <span>Tempo Logado:</span>
+                <strong id="cfg-session-timer" class="timer-badge">00:00:00</strong>
+            </div>
+        </div>
+
+        <!-- Seção 2: Temas de Estilo -->
+        <div class="config-section">
+            <h4>🎨 Tema do Sistema (Buffer Meli)</h4>
+            <div class="theme-buttons">
+                <button type="button" class="theme-btn dark" onclick="mudarTema('dark')">Dark Mode</button>
+                <button type="button" class="theme-btn light" onclick="mudarTema('light')">Light Mode</button>
+                <button type="button" class="theme-btn meli" onclick="mudarTema('meli')">🟡 Meli Mode</button>
+            </div>
+        </div>
+
+        <!-- Seção 3: Alteração de Senha -->
+        <div class="config-section">
+            <h4>🔒 Alterar Senha</h4>
+            <form onsubmit="alterarSenhaOperador(event)">
+                <div class="input-group">
+                    <label>Senha Atual</label>
+                    <input type="password" id="cfg-old-pass" placeholder="••••••••" required>
+                </div>
+                <div class="input-group">
+                    <label>Nova Senha</label>
+                    <input type="password" id="cfg-new-pass" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn-config primary">Salvar Nova Senha</button>
+            </form>
+        </div>
+
+        <div class="config-footer">
+            <button type="button" class="btn-config danger" onclick="realizarLogout()">Encerrar Sessão (Logout)</button>
+        </div>
+    </div>
+</div>
+
+    <!-- Importação do JavaScript da Aplicação -->
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buffer Meli - Consulta e Análise</title>
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- BARRA DE NAVEGAÇÃO -->
+    <nav class="main-navbar">
+        <div class="nav-brand">📦 <strong>Buffer Meli</strong></div>
+        <div class="nav-links">
+            <a href="index.html" class="nav-btn">🗺️ Layout Buffer</a>
+            <a href="consulta.html" class="nav-btn active">🔍 Consulta e Análise</a>
+            <a href="dashboard.html" class="nav-btn">📊 Dashboard</a>
+            <a href="historico.html" class="nav-btn">📋 Histórico</a>
+            <button type="button" class="nav-btn btn-config-link" onclick="abrirConfiguracoes()">⚙️ Configurações</button>
+        </div>
+    </nav>
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="app-container">
+        <div class="layout-grid consulta-layout">
+
+            <!-- 1. PAINEL DE PESQUISA (linha 1 completa) -->
+            <section class="card-box consulta-search">
+                <h2>🔍 Pesquisar Palete ou MU</h2>
+                <div class="search-section">
+                    <div class="search-input-wrapper">
+                        <span class="search-icon">🔎</span>
+                        <input type="text" id="search-input" placeholder="Bipe ou digite o ID do Palete (Ex: PL-01) ou o código da MU...">
+                    </div>
+                    <button class="btn-search">Consultar</button>
+                </div>
+            </section>
+
+            <!-- 2. CONTEÚDO DO PALETE (coluna 1) -->
+            <section class="card-box consulta-card-palete">
+                <div class="card-header-flex">
+                    <h2>📦 Conteúdo do Palete: <span class="highlight-id">---</span></h2>
+                    <span class="badge-capacity">MUs Cadastradas: 0/30</span>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Código MU</th>
+                                <th>Situação</th>
+                                <th>Última Modificação</th>
+                                <th>Operador</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="5" style="text-align: center; color: var(--text-muted);">Realize uma pesquisa para exibir o conteúdo do palete.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 3. ANÁLISE DETALHADA (coluna 2) -->
+            <section class="card-box consulta-card-detalhes">
+                <h2>🔬 Análise Detalhada da MU</h2>
+                
+                <div class="mu-details-header">
+                    <div class="mu-title">
+                        <span id="detail-mu-code">Selecione uma MU</span>
+                        <small class="location-badge" id="detail-mu-location">Localização: ---</small>
+                    </div>
+                    <div class="mu-description" id="detail-mu-desc">Nenhuma MU selecionada para análise detalhada.</div>
+                    
+                    <div class="status-box" style="margin: 12px 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span style="font-size: 0.85rem; font-weight: bold; color: var(--text-muted);">Status do Tratamento:</span>
+                        <div id="detail-mu-status-container" style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <span class="tag tag-liberado" id="detail-mu-status">✅ Liberado</span>
+                        </div>
+                    </div>
+
+                    <div class="tags-wrapper" id="detail-mu-tags">
+                        <!-- Tags dinâmicas adicionais entram aqui -->
+                    </div>
+                </div>
+
+                <h3 class="section-subtitle">Histórico de Movimentação no Buffer:</h3>
+                <div class="timeline" id="detail-mu-timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-content" style="color: var(--text-muted);">Aguardando seleção de uma MU...</div>
+                    </div>
+                </div>
+
+                <div class="action-buttons" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 15px;">
+                    <button class="btn-action danger" disabled>🗑️ Remover do Palete</button>
+                    <button class="btn-action primary" disabled>🔄 Mover para Outro Palete</button>
+                    <button class="btn-action warning" id="btn-alterar-status" disabled>🏷️ Alterar Status</button>
+                    <button class="btn-action warning" id="btn-selecionar-erros" disabled>⚠️ Selecionar Erros</button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="config-modal" class="config-overlay" style="display: none;">
+        <div class="config-card">
+            <div class="config-header">
+                <h3>⚙️ Configurações do Operador</h3>
+                <button type="button" class="close-btn" onclick="fecharConfiguracoes()">&times;</button>
+            </div>
+            <div class="config-section">
+                <h4>📊 Sessão Ativa</h4>
+                <div class="info-row">
+                    <span>Usuário:</span>
+                    <strong id="cfg-user-name">-</strong>
+                </div>
+                <div class="info-row">
+                    <span>Tempo Logado:</span>
+                    <strong id="cfg-session-timer" class="timer-badge">00:00:00</strong>
+                </div>
+            </div>
+            <div class="config-section">
+                <h4>🎨 Tema do Sistema</h4>
+                <div class="theme-buttons">
+                    <button type="button" class="theme-btn dark" onclick="mudarTema('dark')">Dark</button>
+                    <button type="button" class="theme-btn light" onclick="mudarTema('light')">Light</button>
+                    <button type="button" class="theme-btn meli" onclick="mudarTema('meli')">Meli</button>
+                </div>
+            </div>
+            <div class="config-section">
+                <h4>🔒 Alterar Senha</h4>
+                <form onsubmit="alterarSenhaOperador(event)">
+                    <div class="input-group">
+                        <label>Senha Atual</label>
+                        <input type="password" id="cfg-old-pass" placeholder="••••••••" required>
+                    </div>
+                    <div class="input-group">
+                        <label>Nova Senha</label>
+                        <input type="password" id="cfg-new-pass" placeholder="••••••••" required>
+                    </div>
+                    <button type="submit" class="btn-config primary">Salvar Nova Senha</button>
+                </form>
+            </div>
+            <div class="config-footer">
+                <button type="button" class="btn-config danger" onclick="realizarLogout()">Encerrar Sessão</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

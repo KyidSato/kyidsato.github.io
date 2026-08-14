@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buffer Meli - Dashboard</title>
+    
+    <!-- Importação do Chart.js para o Gráfico de Erros -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- BARRA DE NAVEGAÇÃO -->
+    <nav class="main-navbar">
+        <div class="nav-brand">📦 <strong>Buffer Meli</strong></div>
+        <div class="nav-links">
+            <a href="index.html" class="nav-btn">🗺️ Layout Buffer</a>
+            <a href="consulta.html" class="nav-btn">🔍 Consulta e Análise</a>
+            <a href="dashboard.html" class="nav-btn active">📊 Dashboard</a>
+            <a href="historico.html" class="nav-btn">📋 Histórico</a>
+            <button type="button" class="nav-btn btn-config-link" onclick="abrirConfiguracoes()">⚙️ Configurações</button>
+        </div>
+    </nav>
+
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="app-container">
+        <div class="layout-grid">
+
+            <!-- 1. KPI CHAVES - OCUPAÇÃO E VOLUMETRIA -->
+            <section class="card-box">
+                <h2>🎯 KPIs Chaves de Ocupação e Volume</h2>
+                <br>
+                <div class="kpi-grid">
+                    
+                    <!-- TOTAL DE MUs -->
+                    <div class="kpi-card highlight">
+                        <div class="kpi-title">Total de MUs (Buffer + Pendentes)</div>
+                        <div class="kpi-value" id="kpi-total-mus">0 <span class="kpi-unit">MUs</span></div>
+                        <div class="kpi-subtext">Total sistêmico + (Paletes Pendentes x 30)</div>
+                    </div>
+
+                    <!-- OCUPAÇÃO PENDENTES -->
+                    <div class="kpi-card danger">
+                        <div class="kpi-title">Ocupação em Pendentes (Zona Vermelha)</div>
+                        <div class="kpi-value" id="kpi-ocupacao-pendentes-perc">0%</div>
+                        <div class="kpi-bar-wrapper">
+                            <div class="kpi-bar-fill" id="kpi-ocupacao-pendentes-bar" style="width: 0%; background-color: #ef4444;"></div>
+                        </div>
+                        <div class="kpi-subtext" id="kpi-ocupacao-pendentes-text">0 de X posições ocupadas</div>
+                    </div>
+
+                    <!-- OCUPAÇÃO TRIAGEM -->
+                    <div class="kpi-card warning">
+                        <div class="kpi-title">Ocupação em Triagem (Zona Amarela)</div>
+                        <div class="kpi-value" id="kpi-ocupacao-triagem-perc">0%</div>
+                        <div class="kpi-bar-wrapper">
+                            <div class="kpi-bar-fill" id="kpi-ocupacao-triagem-bar" style="width: 0%; background-color: #f59e0b;"></div>
+                        </div>
+                        <div class="kpi-subtext" id="kpi-ocupacao-triagem-text">0 de X posições ocupadas</div>
+                    </div>
+
+                    <!-- OCUPAÇÃO RUAS -->
+                    <div class="kpi-card info">
+                        <div class="kpi-title">Ocupação das Ruas (Zona Cinza)</div>
+                        <div class="kpi-value" id="kpi-ocupacao-ruas-perc">0%</div>
+                        <div class="kpi-bar-wrapper">
+                            <div class="kpi-bar-fill" id="kpi-ocupacao-ruas-bar" style="width: 0%; background-color: #64748b;"></div>
+                        </div>
+                        <div class="kpi-subtext" id="kpi-ocupacao-ruas-text">0 de X posições ocupadas</div>
+                    </div>
+
+                    <!-- OCUPAÇÃO EXPEDIÇÃO -->
+                    <div class="kpi-card success">
+                        <div class="kpi-title">Ocupação em Expedição (Zona Verde)</div>
+                        <div class="kpi-value" id="kpi-ocupacao-expedicao-perc">0%</div>
+                        <div class="kpi-bar-wrapper">
+                            <div class="kpi-bar-fill" id="kpi-ocupacao-expedicao-bar" style="width: 0%; background-color: #10b981;"></div>
+                        </div>
+                        <div class="kpi-subtext" id="kpi-ocupacao-expedicao-text">0 de X posições ocupadas</div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- 2. INFORMAÇÕES OPERACIONAIS E GRÁFICO -->
+            <div class="split-container">
+                
+                <!-- KPI INFORMATIVO -->
+                <section class="card-box">
+                    <h2>📈 Informativos Operacionais</h2>
+                    <div class="metrics-list">
+                        <div class="metric-item">
+                            <span>Paletes feitos Separação</span>
+                            <strong id="info-paletes-separacao">0</strong>
+                        </div>
+                        <div class="metric-item">
+                            <span>MUs feitas Cadastro</span>
+                            <strong id="info-mus-cadastro">0</strong>
+                        </div>
+                        <div class="metric-item">
+                            <span>MUs com Erros</span>
+                            <strong id="info-mus-erros" style="color: var(--red-zone);">0</strong>
+                        </div>
+                        <div class="metric-item">
+                            <span>MUs com Tickets Abertos</span>
+                            <strong id="info-mus-tickets" style="color: var(--yellow-zone);">0</strong>
+                        </div>
+                        <div class="metric-item">
+                            <span>Paletes feitos Despacho</span>
+                            <strong id="info-paletes-despacho" style="color: var(--green-zone);">0</strong>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- GRÁFICO DE ERROS -->
+                <section class="card-box">
+                    <h2>📊 Levantamento de MUs por Erro</h2>
+                    <div class="chart-container" style="position: relative; height: 250px; width: 100%; display: flex; align-items: center; justify-content: center;">
+                        <!-- O Canvas onde o Chart.js vai renderizar o gráfico -->
+                        <canvas id="graficoErros"></canvas>
+                    </div>
+                </section>
+
+            </div>
+
+        </div>
+    </main>
+
+    <div id="config-modal" class="config-overlay" style="display: none;">
+        <div class="config-card">
+            <div class="config-header">
+                <h3>⚙️ Configurações do Operador</h3>
+                <button type="button" class="close-btn" onclick="fecharConfiguracoes()">&times;</button>
+            </div>
+            <div class="config-section">
+                <h4>📊 Sessão Ativa</h4>
+                <div class="info-row">
+                    <span>Usuário:</span>
+                    <strong id="cfg-user-name">-</strong>
+                </div>
+                <div class="info-row">
+                    <span>Tempo Logado:</span>
+                    <strong id="cfg-session-timer" class="timer-badge">00:00:00</strong>
+                </div>
+            </div>
+            <div class="config-section">
+                <h4>🎨 Tema do Sistema</h4>
+                <div class="theme-buttons">
+                    <button type="button" class="theme-btn dark" onclick="mudarTema('dark')">Dark</button>
+                    <button type="button" class="theme-btn light" onclick="mudarTema('light')">Light</button>
+                    <button type="button" class="theme-btn meli" onclick="mudarTema('meli')">Meli</button>
+                </div>
+            </div>
+            <div class="config-section">
+                <h4>🔒 Alterar Senha</h4>
+                <form onsubmit="alterarSenhaOperador(event)">
+                    <div class="input-group">
+                        <label>Senha Atual</label>
+                        <input type="password" id="cfg-old-pass" placeholder="••••••••" required>
+                    </div>
+                    <div class="input-group">
+                        <label>Nova Senha</label>
+                        <input type="password" id="cfg-new-pass" placeholder="••••••••" required>
+                    </div>
+                    <button type="submit" class="btn-config primary">Salvar Nova Senha</button>
+                </form>
+            </div>
+            <div class="config-footer">
+                <button type="button" class="btn-config danger" onclick="realizarLogout()">Encerrar Sessão</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
