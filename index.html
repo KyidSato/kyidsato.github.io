@@ -8,6 +8,75 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- CAMADA VISUAL DE BLOQUEIO DE ACESSO -->
+<div id="auth-system-container" class="auth-overlay">
+    <div class="auth-card">
+        <div class="auth-header">
+            <h2>Buffer Meli Operacional</h2>
+            <p>Acesso Restrito à Operação WMS</p>
+        </div>
+
+        <!-- Abas de Navegação -->
+        <div class="auth-tabs">
+            <button type="button" class="tab-btn active" onclick="switchAuthTab('login')">Login</button>
+            <button type="button" class="tab-btn" onclick="switchAuthTab('register')">Cadastrar</button>
+            <button type="button" class="tab-btn" onclick="switchAuthTab('info')">Info</button>
+            <button type="button" class="tab-btn" onclick="switchAuthTab('status')">Status</button>
+        </div>
+
+        <!-- Conteúdo: Aba Login -->
+        <div id="tab-login" class="auth-tab-content active">
+            <form onsubmit="realizarLogin(event)">
+                <div class="input-group">
+                    <label>Usuário / Matrícula</label>
+                    <input type="text" id="login-username" placeholder="Ex: ml-colaborador" required autocomplete="username">
+                </div>
+                <div class="input-group">
+                    <label>Senha</label>
+                    <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn-auth primary">Acessar Sistema</button>
+            </form>
+        </div>
+
+        <!-- Conteúdo: Aba Cadastrar -->
+        <div id="tab-register" class="auth-tab-content">
+            <form onsubmit="realizarCadastro(event)">
+                <div class="input-group">
+                    <label>Nome Completo</label>
+                    <input type="text" id="reg-fullname" placeholder="Ex: Maycon Sato" required>
+                </div>
+                <div class="input-group">
+                    <label>Usuário / Matrícula</label>
+                    <input type="text" id="reg-username" placeholder="Ex: ml-colaborador" required>
+                </div>
+                <div class="input-group">
+                    <label>Senha</label>
+                    <input type="password" id="reg-password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn-auth secondary">Cadastrar Operador</button>
+            </form>
+        </div>
+
+        <!-- Conteúdo: Aba Info do App -->
+        <div id="tab-info" class="auth-tab-content">
+            <div class="info-box">
+                <h4>Buffer Meli Operacional</h4>
+                <p><strong>Uso exclusivo:</strong> Controle de fluxo de MUs e triagem de paletes WMS.</p>
+            </div>
+        </div>
+
+        <!-- Conteúdo: Aba Status do App -->
+        <div id="tab-status" class="auth-tab-content">
+            <div class="status-box">
+                <p>🟢 <strong>Servidor WMS:</strong> Operacional</p>
+                <p>🔄 <strong>Sincronização:</strong> Ativa</p>
+                <p id="auth-status-user">👤 <strong>Usuário Ativo:</strong> Bloqueado</p>
+            </div>
+        </div>
+    </div>
+</div>
+
     <!-- MODAL DE RESUMO DO PALETE (Refatorado para as classes nativas do CSS) -->
     <div id="pallet-modal" class="pallet-modal-overlay hidden">
         <div class="pallet-modal-content">
