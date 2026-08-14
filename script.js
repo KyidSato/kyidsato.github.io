@@ -21,14 +21,14 @@ function realizarCadastro(event) {
     let usuariosCadastrados = JSON.parse(localStorage.getItem('wms_usuarios_sistema')) || [];
 
     if (usuariosCadastrados.some(u => u.usuario === usuario)) {
-        alert('❌ Este usuário já está cadastrado!');
+        exibirToast('warning', 'Usuário duplicado', 'Este usuário já está cadastrado!');
         return;
     }
 
     usuariosCadastrados.push({ nome, usuario, senha });
     localStorage.setItem('wms_usuarios_sistema', JSON.stringify(usuariosCadastrados));
 
-    alert(`✅ Operador "${nome}" cadastrado com sucesso! Faça login.`);
+    exibirToast('success', 'Cadastro concluído', `Operador "${nome}" cadastrado com sucesso! Faça login.`);
     document.getElementById('reg-fullname').value = '';
     document.getElementById('reg-username').value = '';
     document.getElementById('reg-password').value = '';
@@ -63,8 +63,9 @@ function realizarLogin(event) {
         }
 
         console.log(`🔓 Acesso liberado para: ${dadosSessao}`);
+        exibirToast('success', 'Login bem-sucedido', `Bem-vindo, ${usuarioEncontrado.nome}!`);
     } else {
-        alert('❌ Usuário ou senha incorretos!');
+        exibirToast('error', 'Falha de autenticação', 'Usuário ou senha incorretos!');
     }
 }
 
@@ -166,14 +167,14 @@ function alterarSenhaOperador(event) {
 
     const sessaoCompleta = localStorage.getItem('usuario_ativo_wms');
     if (!sessaoCompleta) {
-        alert('❌ Nenhuma sessão ativa encontrada.');
+        exibirToast('error', 'Sessão inativa', 'Nenhuma sessão ativa encontrada.');
         return;
     }
 
     // Extrai o nome de usuário (matrícula) armazenado entre parênteses
     const matchUser = sessaoCompleta.match(/\(([^)]+)\)$/);
     if (!matchUser) {
-        alert('❌ Erro ao identificar o identificador do usuário.');
+        exibirToast('error', 'Erro de identificação', 'Erro ao identificar o identificador do usuário.');
         return;
     }
     const usuarioMatricula = matchUser[1];
@@ -185,14 +186,14 @@ function alterarSenhaOperador(event) {
         if (usuariosCadastrados[indexUser].senha === senhaAntiga) {
             usuariosCadastrados[indexUser].senha = senhaNova;
             localStorage.setItem('wms_usuarios_sistema', JSON.stringify(usuariosCadastrados));
-            alert('✅ Senha alterada com sucesso!');
+            exibirToast('success', 'Senha alterada', 'Sua senha foi alterada com sucesso!');
             document.getElementById('cfg-old-pass').value = '';
             document.getElementById('cfg-new-pass').value = '';
         } else {
-            alert('❌ A senha atual está incorreta!');
+            exibirToast('error', 'Senha incorreta', 'A senha atual está incorreta!');
         }
     } else {
-        alert('❌ Usuário não encontrado na base de registros.');
+        exibirToast('error', 'Usuário não encontrado', 'Usuário não encontrado na base de registros.');
     }
 }
 
@@ -208,7 +209,7 @@ function realizarLogout() {
 function exibirToast(tipo, titulo, mensagem, tempo = 3500) {
     const toastStack = document.getElementById('toast-stack');
     if (!toastStack) {
-        alert(`${titulo}\n${mensagem}`);
+        exibirToast('info', 'Informação', `${titulo}\n${mensagem}`);
         return;
     }
 
@@ -484,7 +485,7 @@ function validarMovimentacaoPallet(palletElement, destino) {
 
 function triggerAction(actionName) {
     if (!selectedElement) {
-        alert('\u274c Selecione um palete antes de executar a opera\u00e7\u00e3o.');;
+        exibirToast('info', 'Informação', '\u274c Selecione um palete antes de executar a opera\u00e7\u00e3o.');;
         return;
     }
 
@@ -682,7 +683,7 @@ function addRedPallet() {
     if (!stack) return;
 
     if (stack.children.length >= MAX_RED_PALLETS) {
-        alert('Capacidade máxima da Zona Vermelha atingida (10 pallets)!');
+        exibirToast('warning', 'Capacidade máxima', 'A Zona Vermelha atingiu a capacidade máxima de 10 paletes.');
         return;
     }
 
@@ -710,7 +711,7 @@ function addRedPallet() {
 function removeRedPallet() {
     const stack = document.getElementById('red-stack');
     if (!stack || stack.children.length === 0) {
-        alert('A Zona Vermelha já está vazia!');
+        exibirToast('info', 'Zona vazia', 'A Zona Vermelha já está vazia!');
         return;
     }
 
@@ -743,7 +744,7 @@ function dropPalletRed(event, redContainer) {
     if (sourceZone === redContainer) return;
 
     if (redContainer.children.length >= MAX_RED_PALLETS) {
-        alert('Capacidade máxima da Zona Vermelha atingida!');
+        exibirToast('warning', 'Capacidade máxima', 'A Zona Vermelha atingiu a capacidade máxima de 10 paletes.');
         return;
     }
 
@@ -757,6 +758,7 @@ function dropPalletRed(event, redContainer) {
         redContainer.appendChild(draggedPallet);
         updateRedCounter();
         updateStatus(`🔴 <strong>Palete retornado à Zona Vermelha.</strong>`);
+        setTimeout(atualizarDashboard, 500);
     }
 }
 
@@ -781,12 +783,12 @@ function dropPalletYellow(event, yellowContainer) {
         if (inputPL === null) return;
 
         if (inputPL.trim().toUpperCase() !== currentPL) {
-            alert(`❌ Dados não conferem! Você informou "${inputPL}" mas o palete é "${currentPL}".`);
+            exibirToast('error', 'Erro', `❌ Dados não conferem! Você informou "${inputPL}" mas o palete é "${currentPL}".`);
             return;
         }
 
         if (yellowContainer.querySelectorAll('.pallet').length >= MAX_YELLOW_PALLETS) {
-            alert('🚫 A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
+            exibirToast('info', 'Informação', '🚫 A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
             return;
         }
 
@@ -802,12 +804,12 @@ function dropPalletYellow(event, yellowContainer) {
 
     const validacao = validarMovimentacaoPallet(draggedPallet, 'amarela');
     if (!validacao.ok) {
-        alert(`🚫 ${validacao.motivo}`);
+        exibirToast('info', 'Informação', `🚫 ${validacao.motivo}`);
         return;
     }
 
     if (yellowContainer.querySelectorAll('.pallet').length >= MAX_YELLOW_PALLETS) {
-        alert('🚫 A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
+        exibirToast('info', 'Informação', '🚫 A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
         return;
     }
 
@@ -819,6 +821,7 @@ function dropPalletYellow(event, yellowContainer) {
 
         updateRedCounter();
         updateStatus('🟠 <strong>Pallet na triagem.</strong> Aguardando checagem HH.');
+        setTimeout(atualizarDashboard, 500);
         return;
     }
 }
@@ -858,22 +861,22 @@ function dropPallet(event, laneElement) {
     // Validação básica
     const validacao = validarMovimentacaoPallet(draggedPallet, 'rua');
     if (!validacao.ok) {
-        alert(`🚫 ${validacao.motivo}`);
+        exibirToast('info', 'Informação', `🚫 ${validacao.motivo}`);
         return;
     }
 
     if (sourceZone.id === 'red-stack') {
-        alert('🚫 Paletes da Zona Vermelha devem passar pela Zona Amarela antes da rua.');
+        exibirToast('info', 'Informação', '🚫 Paletes da Zona Vermelha devem passar pela Zona Amarela antes da rua.');
         return;
     }
 
     if (isFromYellow && !draggedPallet.classList.contains('blue')) {
-        alert('🚫 O palete precisa ter o ID vinculado (azul) para entrar na rua.');
+        exibirToast('info', 'Informação', '🚫 O palete precisa ter o ID vinculado (azul) para entrar na rua.');
         return;
     }
 
     if (laneElement.querySelectorAll('.pallet').length >= 6 && !laneElement.contains(draggedPallet)) {
-        alert('🚫 Esta rua atingiu o limite máximo de 6 paletes.');
+        exibirToast('info', 'Informação', '🚫 Esta rua atingiu o limite máximo de 6 paletes.');
         return;
     }
 
@@ -887,14 +890,21 @@ function dropPallet(event, laneElement) {
 
         const ruaNormalizada = inputRua.trim().toUpperCase();
         if (ruaNormalizada !== targetLaneCode) {
-            alert(`❌ Dados não conferem! Você informou rua "${ruaNormalizada}" mas a rua de destino é "${targetLaneCode}".`);
+            exibirToast('error', 'Dados não conferem', `Você informou rua "${ruaNormalizada}" mas a rua de destino é "${targetLaneCode}".`);
             return;
         }
         palletLocation[currentPL] = targetLaneCode;
+        const isSelected = draggedPallet.classList.contains('selected');
+        draggedPallet.className = `pallet blue${isSelected ? ' selected' : ''}`;
+        laneElement.appendChild(draggedPallet);
+        updateRedCounter();
+        exibirToast('success', 'Triagem → Rua', `PL ${currentPL} movido para ${targetLaneCode}`);
+        updateStatus('🚚 <strong>Palete alocado na rua.</strong>');
+        return;
     }
 
     // Fluxo: Entre Ruas (solicita PL e rua)
-    if (isFromStreet) {
+    if (isFromStreet && !isFromGreen) {
         const currentStreetLane = sourceZone.closest('.street-lane');
         const currentLaneCode = getTargetLaneCode(currentStreetLane);
         
@@ -906,10 +916,17 @@ function dropPallet(event, laneElement) {
 
         const ruaNormalizada = inputRua.trim().toUpperCase();
         if (ruaNormalizada !== targetLaneCode) {
-            alert(`❌ Dados não conferem! Você informou rua "${ruaNormalizada}" mas a rua de destino é "${targetLaneCode}".`);
+            exibirToast('error', 'Dados não conferem', `Você informou rua "${ruaNormalizada}" mas a rua de destino é "${targetLaneCode}".`);
             return;
         }
         palletLocation[currentPL] = targetLaneCode;
+        const isSelected = draggedPallet.classList.contains('selected');
+        draggedPallet.className = `pallet blue${isSelected ? ' selected' : ''}`;
+        laneElement.appendChild(draggedPallet);
+        updateRedCounter();
+        exibirToast('success', 'Troca de Rua', `PL ${currentPL} movido de ${currentLaneCode} para ${targetLaneCode}`);
+        updateStatus('🚚 <strong>Palete movido para outra rua.</strong>');
+        return;
     }
 
     // Fluxo: Verde → Ruas (reset do palete, desvincula PL)
@@ -922,7 +939,7 @@ function dropPallet(event, laneElement) {
 
         const ruaNormalizada = inputRua.trim().toUpperCase();
         if (ruaNormalizada !== targetLaneCode) {
-            alert(`❌ Dados não conferem! Você informou rua "${ruaNormalizada}" mas a rua de destino é "${targetLaneCode}".`);
+            exibirToast('error', 'Dados não conferem', `Você informou rua "${ruaNormalizada}" mas a rua de destino é "${targetLaneCode}".`);
             return;
         }
 
@@ -930,15 +947,14 @@ function dropPallet(event, laneElement) {
         draggedPallet.className = 'pallet yellow-checked';
         draggedPallet.innerText = 'Check';
         delete palletLocation[currentPL];
-        updateStatus('🔄 <strong>Palete retornado.</strong> PL desvinculada.');
+        laneElement.appendChild(draggedPallet);
+        updateRedCounter();
+        exibirToast('info', 'Retorno à Triagem', `PL ${currentPL} retornado à triagem. ID desvinculado.`);
+        updateStatus('🔄 <strong>Palete retornado à triagem.</strong> PL desvinculada.');
+        setTimeout(atualizarDashboard, 500);
+        return;
     }
-
-    const isSelected = draggedPallet.classList.contains('selected');
-    draggedPallet.className = `pallet blue${isSelected ? ' selected' : ''}`;
-    laneElement.appendChild(draggedPallet);
-    updateRedCounter();
-
-    updateStatus('🚚 <strong>Palete alocado na rua.</strong>');
+    setTimeout(atualizarDashboard, 500);
 }
 
 function dropPalletGreen(event, greenContainer) {
@@ -951,12 +967,12 @@ function dropPalletGreen(event, greenContainer) {
 
     const validacao = validarMovimentacaoPallet(draggedPallet, 'verde');
     if (!validacao.ok) {
-        alert(`🚫 ${validacao.motivo}`);
+        exibirToast('info', 'Informação', `🚫 ${validacao.motivo}`);
         return;
     }
 
     if (greenContainer.querySelectorAll('.pallet').length >= MAX_GREEN_PALLETS) {
-        alert('🚫 A Zona Verde atingiu a capacidade máxima de 12 paletes.');
+        exibirToast('info', 'Informação', '🚫 A Zona Verde atingiu a capacidade máxima de 12 paletes.');
         return;
     }
 
@@ -972,6 +988,7 @@ function dropPalletGreen(event, greenContainer) {
     updateRedCounter();
 
     updateStatus('🟢 <strong>Palete liberado para expedição.</strong>');
+    setTimeout(atualizarDashboard, 500);
 }
 
 // Função para retornar palete de Verde para Triagem (reset)
@@ -984,7 +1001,7 @@ function dropPalletFromGreenToYellow(event, yellowContainer) {
     if (!draggedPallet || !draggedPallet.classList.contains('green')) return;
 
     if (yellowContainer.querySelectorAll('.pallet').length >= MAX_YELLOW_PALLETS) {
-        alert('🚫 A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
+        exibirToast('info', 'Informação', '🚫 A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
         return;
     }
 
@@ -993,7 +1010,7 @@ function dropPalletFromGreenToYellow(event, yellowContainer) {
     if (inputPL === null) return;
 
     if (inputPL.trim().toUpperCase() !== currentPL) {
-        alert(`❌ Dados não conferem! Você informou "${inputPL}" mas o palete é "${currentPL}".`);
+        exibirToast('error', 'Erro', `❌ Dados não conferem! Você informou "${inputPL}" mas o palete é "${currentPL}".`);
         return;
     }
 
@@ -1146,7 +1163,7 @@ function registrarHistoricoMU(muCode, eventoTexto) {
 
 function realizarConsulta() {
     const input = document.getElementById('search-input').value.trim().toUpperCase();
-    if (!input) return alert("Digite um ID de Palete ou MU.");
+    if (!input) return exibirToast('info', 'Informação', "Digite um ID de Palete ou MU.");
 
     const bufferLayout = JSON.parse(localStorage.getItem('buffer_layout')) || [];
     let idPalvo = null, nomeExibicao = "", listaMUs = [];
@@ -1171,35 +1188,208 @@ function realizarConsulta() {
     }
 
     if (!idPalvo) {
-        alert(`Nenhum registro encontrado para: ${input}`);
+        exibirToast('info', 'Informação', `Nenhum registro encontrado para: ${input}`);
         return;
     }
 
     muSelecionadaGlobal = listaMUs[0] || null;
     paleteAtualGlobal = { idInterno: idPalvo, idPalete: nomeExibicao };
-    alert(`Palete ${nomeExibicao} encontrado com ${listaMUs.length} MUs.`);
+    exibirToast('info', 'Informação', `Palete ${nomeExibicao} encontrado com ${listaMUs.length} MUs.`);
 }
 
 function removerMUAtual() {
-    if (!muSelecionadaGlobal || !paleteAtualGlobal) return alert("Nenhuma MU selecionada.");
+    if (!muSelecionadaGlobal || !paleteAtualGlobal) return exibirToast('info', 'Informação', "Nenhuma MU selecionada.");
     if (confirm(`Remover MU ${muSelecionadaGlobal}?`)) {
         palletMUs[paleteAtualGlobal.idInterno] = palletMUs[paleteAtualGlobal.idInterno].filter(m => m !== muSelecionadaGlobal);
         salvarEstadoGeral();
-        alert("MU removida com sucesso!");
+        exibirToast('info', 'Informação', "MU removida com sucesso!");
     }
 }
 
 function moverMUAtual() {
-    alert("Função de movimentação de MU ativa.");
+    exibirToast('info', 'Informação', "Função de movimentação de MU ativa.");
 }
 
 function alterarStatusMUAtual() {
-    alert("Alteração de status da MU ativa.");
+    exibirToast('info', 'Informação', "Alteração de status da MU ativa.");
 }
 
 function abrirModalSelecaoErros() {
-    alert("Modal de seleção de erros.");
+    exibirToast('info', 'Informação', "Modal de seleção de erros.");
 }
+
+// ==================================================================
+// FUNÇÕES DE INTEGRAÇÃO: MAPA → DASHBOARD → CONSULTA → HISTÓRICO
+// ==================================================================
+
+function obterStatusZonas() {
+    const redStack = document.getElementById('red-stack');
+    const yellowStack = document.getElementById('yellow-stack');
+    const greenContainer = document.querySelector('.green-zone');
+    const streetsContainer = document.querySelectorAll('.street-lane');
+
+    const stats = {
+        vermelha: { ocupados: redStack ? redStack.children.length : 0, capacidade: MAX_RED_PALLETS },
+        amarela: { ocupados: yellowStack ? yellowStack.children.length : 0, capacidade: MAX_YELLOW_PALLETS },
+        verde: { ocupados: greenContainer ? greenContainer.querySelectorAll('.pallet').length : 0, capacidade: MAX_GREEN_PALLETS },
+        ruas: { ocupados: 0, capacidade: 0 },
+        totalMUs: Object.values(palletMUs).reduce((sum, mus) => sum + mus.length, 0)
+    };
+
+    streetsContainer.forEach(lane => {
+        const pallets = lane.querySelectorAll('.pallet').length;
+        stats.ruas.ocupados += pallets;
+        stats.ruas.capacidade += 6;
+    });
+
+    return stats;
+}
+
+function atualizarDashboard() {
+    const stats = obterStatusZonas();
+    
+    // KPI: Total de MUs
+    const totalMUsEl = document.getElementById('kpi-total-mus');
+    if (totalMUsEl) {
+        const musPendentes = stats.vermelha.ocupados * 30;
+        const totalMUs = stats.totalMUs + musPendentes;
+        totalMUsEl.innerHTML = `${totalMUs} <span class="kpi-unit">MUs</span>`;
+    }
+
+    // KPI: Ocupação Vermelha
+    const percVermelha = (stats.vermelha.ocupados / stats.vermelha.capacidade) * 100;
+    if (document.getElementById('kpi-ocupacao-pendentes-perc')) {
+        document.getElementById('kpi-ocupacao-pendentes-perc').innerText = Math.round(percVermelha) + '%';
+        document.getElementById('kpi-ocupacao-pendentes-bar').style.width = percVermelha + '%';
+        document.getElementById('kpi-ocupacao-pendentes-text').innerText = `${stats.vermelha.ocupados} de ${stats.vermelha.capacidade} posições ocupadas`;
+    }
+
+    // KPI: Ocupação Amarela
+    const percAmarela = (stats.amarela.ocupados / stats.amarela.capacidade) * 100;
+    if (document.getElementById('kpi-ocupacao-triagem-perc')) {
+        document.getElementById('kpi-ocupacao-triagem-perc').innerText = Math.round(percAmarela) + '%';
+        document.getElementById('kpi-ocupacao-triagem-bar').style.width = percAmarela + '%';
+        document.getElementById('kpi-ocupacao-triagem-text').innerText = `${stats.amarela.ocupados} de ${stats.amarela.capacidade} posições ocupadas`;
+    }
+
+    // KPI: Ocupação Ruas
+    const percRuas = stats.ruas.capacidade > 0 ? (stats.ruas.ocupados / stats.ruas.capacidade) * 100 : 0;
+    if (document.getElementById('kpi-ocupacao-ruas-perc')) {
+        document.getElementById('kpi-ocupacao-ruas-perc').innerText = Math.round(percRuas) + '%';
+        document.getElementById('kpi-ocupacao-ruas-bar').style.width = percRuas + '%';
+        document.getElementById('kpi-ocupacao-ruas-text').innerText = `${stats.ruas.ocupados} de ${stats.ruas.capacidade} posições ocupadas`;
+    }
+
+    // KPI: Ocupação Verde
+    const percVerde = (stats.verde.ocupados / stats.verde.capacidade) * 100;
+    if (document.getElementById('kpi-ocupacao-expedicao-perc')) {
+        document.getElementById('kpi-ocupacao-expedicao-perc').innerText = Math.round(percVerde) + '%';
+        document.getElementById('kpi-ocupacao-expedicao-bar').style.width = percVerde + '%';
+        document.getElementById('kpi-ocupacao-expedicao-text').innerText = `${stats.verde.ocupados} de ${stats.verde.capacidade} posições ocupadas`;
+    }
+}
+
+function carregarHistoricoComMedias() {
+    const historicoGeral = JSON.parse(localStorage.getItem('buffer_historico')) || [];
+    const historicoPorMU = getHistoricoMUs();
+    
+    // Calcular estatísticas
+    const totalMUs = historicoGeral.length;
+    const totalPallets = new Set(historicoGeral.map(h => h.palletID)).size;
+    const acoesPorMU = Object.values(historicoPorMU).reduce((sum, eventos) => sum + eventos.length, 0);
+    const mediaAcoes = totalMUs > 0 ? (acoesPorMU / totalMUs).toFixed(2) : 0;
+
+    // Atualizar KPIs
+    if (document.getElementById('kpi-total-mus')) {
+        document.getElementById('kpi-total-mus').innerText = totalMUs;
+    }
+    if (document.getElementById('kpi-total-pallets')) {
+        document.getElementById('kpi-total-pallets').innerText = totalPallets;
+    }
+    if (document.getElementById('kpi-media-acoes')) {
+        document.getElementById('kpi-media-acoes').innerText = mediaAcoes;
+    }
+
+    // Popular tabela de histórico
+    const tbody = document.querySelector('.history-table tbody');
+    if (tbody) {
+        tbody.innerHTML = '';
+        historicoGeral.slice().reverse().forEach(registro => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${registro.mu}</td>
+                <td>${registro.palletID || '---'}</td>
+                <td>${registro.dataDespacho}</td>
+                <td>${registro.usuario || 'Sistema'}</td>
+                <td>${registro.acoesFeitas || 0}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+}
+
+function preencherConsultaMU(paletePL) {
+    const tbody = document.querySelector('.consulta-card-palete tbody');
+    if (!tbody) return;
+
+    const redStack = document.getElementById('red-stack');
+    const palete = Array.from(redStack.children).find(p => p.innerText === paletePL);
+    
+    if (!palete) return;
+
+    const musList = palletMUs[palete.id] || [];
+    tbody.innerHTML = '';
+    
+    musList.forEach((mu, idx) => {
+        const historicoPorMU = getHistoricoMUs()[mu] || [];
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${mu}</strong></td>
+            <td><span class="badge badge-active">Ativa</span></td>
+            <td>${historicoPorMU.length > 0 ? historicoPorMU[historicoPorMU.length - 1].timestamp : '---'}</td>
+            <td>${historicoPorMU.length > 0 ? historicoPorMU[historicoPorMU.length - 1].usuario : '---'}</td>
+            <td><button onclick="exibirDetalheMU('${mu}')">📊 Ver</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function exibirDetalheMU(muCode) {
+    const historico = getHistoricoMUs()[muCode] || [];
+    const detailTimeline = document.getElementById('detail-mu-timeline');
+    const detailMUCode = document.getElementById('detail-mu-code');
+    
+    if (detailMUCode) detailMUCode.innerText = muCode;
+    
+    if (detailTimeline) {
+        detailTimeline.innerHTML = '';
+        historico.forEach(evento => {
+            const item = document.createElement('div');
+            item.className = 'timeline-item';
+            item.innerHTML = `
+                <div class="timeline-time">${evento.timestamp}</div>
+                <div class="timeline-content">
+                    <strong>${evento.usuario}</strong>
+                    <p>${evento.evento}</p>
+                </div>
+            `;
+            detailTimeline.appendChild(item);
+        });
+    }
+}
+
+// Inicializar ao carregar página
+document.addEventListener('DOMContentLoaded', () => {
+    // Dashboard
+    if (document.getElementById('kpi-total-mus') && document.querySelectorAll('.kpi-grid').length > 1) {
+        atualizarDashboard();
+        setInterval(atualizarDashboard, 5000);
+    }
+    // Histórico
+    if (document.querySelector('.history-table')) {
+        carregarHistoricoComMedias();
+    }
+});
 
 // Exportações Globais necessárias para HTML
 window.selectPalletElement = selectPalletElement;
@@ -1218,3 +1408,8 @@ window.removerMUAtual = removerMUAtual;
 window.moverMUAtual = moverMUAtual;
 window.alterarStatusMUAtual = alterarStatusMUAtual;
 window.abrirModalSelecaoErros = abrirModalSelecaoErros;
+window.obterStatusZonas = obterStatusZonas;
+window.atualizarDashboard = atualizarDashboard;
+window.carregarHistoricoComMedias = carregarHistoricoComMedias;
+window.preencherConsultaMU = preencherConsultaMU;
+window.exibirDetalheMU = exibirDetalheMU;

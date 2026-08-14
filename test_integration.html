@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Integração - Buffer Meli</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .test-container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            color: var(--text-color);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+        .test-result.success {
+            border-left-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .test-result.error {
+            border-left-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .test-result.info {
+            border-left-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+        button {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px 0;
+        }
+        button:hover {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Teste de Integração - Sistema WMS</h1>
+        
+        <div class="test-section">
+            <h2>1. Inicializar Dados de Teste</h2>
+            <button onclick="inicializarDadosTeste()">Criar Paletes de Teste</button>
+            <div id="test-init"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>2. Validar Status de Zonas</h2>
+            <button onclick="testarStatusZonas()">Verificar Ocupação</button>
+            <div id="test-zones"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>3. Validar Dashboard</h2>
+            <button onclick="testarDashboard()">Atualizar Dashboard</button>
+            <div id="test-dashboard"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>4. Validar Histórico</h2>
+            <button onclick="testarHistorico()">Carregar Histórico</button>
+            <div id="test-historico"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>5. Validar Consulta</h2>
+            <button onclick="testarConsulta()">Testar Consulta</button>
+            <div id="test-consulta"></div>
+        </div>
+    </div>
+
+    <div id="toast-stack" style="display: none;"></div>
+
+    <script src="script.js"></script>
+    <script>
+        // Importar localStorage e estrutura do script.js
+        
+        function addResult(containerId, message, type = 'info') {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerText = message;
+            container.appendChild(div);
+        }
+
+        function inicializarDadosTeste() {
+            document.getElementById('test-init').innerHTML = '';
+            
+            try {
+                // Criar paletes de teste
+                for (let i = 1; i <= 3; i++) {
+                    const paletId = `palete-${i}`;
+                    const mus = [];
+                    for (let j = 1; j <= 5; j++) {
+                        mus.push(`MU-TEST-00${i}0${j}`);
+                    }
+                    palletMUs[paletId] = mus;
+                }
+
+                // Registrar histórico de MU
+                for (let i = 1; i <= 3; i++) {
+                    for (let j = 1; j <= 5; j++) {
+                        const muCode = `MU-TEST-00${i}0${j}`;
+                        registrarHistoricoMU(muCode, `Cadastrada em palete P${String(i).padStart(2, '0')}`);
+                    }
+                }
+
+                localStorage.setItem('palletMUs', JSON.stringify(palletMUs));
+                addResult('test-init', '✅ Dados de teste criados: 3 paletes x 5 MUs = 15 MUs', 'success');
+                addResult('test-init', `📦 Paletes: ${Object.keys(palletMUs).join(', ')}`, 'info');
+            } catch (e) {
+                addResult('test-init', `❌ Erro ao criar dados: ${e.message}`, 'error');
+            }
+        }
+
+        function testarStatusZonas() {
+            document.getElementById('test-zones').innerHTML = '';
+            
+            try {
+                const stats = obterStatusZonas();
+                addResult('test-zones', `✅ Status das Zonas:`, 'success');
+                addResult('test-zones', `🔴 Vermelha: ${stats.vermelha.ocupados}/${stats.vermelha.capacidade}`, 'info');
+                addResult('test-zones', `🟠 Amarela: ${stats.amarela.ocupados}/${stats.amarela.capacidade}`, 'info');
+                addResult('test-zones', `🚚 Ruas: ${stats.ruas.ocupados}/${stats.ruas.capacidade}`, 'info');
+                addResult('test-zones', `🟢 Verde: ${stats.verde.ocupados}/${stats.verde.capacidade}`, 'info');
+                addResult('test-zones', `📦 Total de MUs no mapa: ${stats.totalMUs}`, 'info');
+            } catch (e) {
+                addResult('test-zones', `❌ Erro: ${e.message}`, 'error');
+            }
+        }
+
+        function testarDashboard() {
+            document.getElementById('test-dashboard').innerHTML = '';
+            
+            try {
+                // Criar container fake para dashboard
+                if (!document.getElementById('kpi-total-mus')) {
+                    const div = document.createElement('div');
+                    div.innerHTML = `
+                        <div id="kpi-total-mus">0</div>
+                        <div id="kpi-ocupacao-pendentes-perc">0%</div>
+                        <div id="kpi-ocupacao-pendentes-bar" style="width:0%"></div>
+                        <div id="kpi-ocupacao-pendentes-text">0 de 10</div>
+                        <div id="kpi-ocupacao-triagem-perc">0%</div>
+                        <div id="kpi-ocupacao-triagem-bar" style="width:0%"></div>
+                        <div id="kpi-ocupacao-triagem-text">0 de 6</div>
+                        <div id="kpi-ocupacao-ruas-perc">0%</div>
+                        <div id="kpi-ocupacao-ruas-bar" style="width:0%"></div>
+                        <div id="kpi-ocupacao-ruas-text">0 de 30</div>
+                        <div id="kpi-ocupacao-expedicao-perc">0%</div>
+                        <div id="kpi-ocupacao-expedicao-bar" style="width:0%"></div>
+                        <div id="kpi-ocupacao-expedicao-text">0 de 12</div>
+                    `;
+                    document.body.appendChild(div);
+                }
+
+                atualizarDashboard();
+                
+                const totalMUs = document.getElementById('kpi-total-mus')?.innerText || '0';
+                const percVermelha = document.getElementById('kpi-ocupacao-pendentes-perc')?.innerText || '0%';
+                
+                addResult('test-dashboard', `✅ Dashboard atualizado:`, 'success');
+                addResult('test-dashboard', `Total MUs: ${totalMUs}`, 'info');
+                addResult('test-dashboard', `Ocupação Vermelha: ${percVermelha}`, 'info');
+            } catch (e) {
+                addResult('test-dashboard', `❌ Erro: ${e.message}`, 'error');
+            }
+        }
+
+        function testarHistorico() {
+            document.getElementById('test-historico').innerHTML = '';
+            
+            try {
+                // Criar container fake
+                if (!document.querySelector('.history-table')) {
+                    const div = document.createElement('table');
+                    div.className = 'history-table';
+                    div.innerHTML = '<tbody></tbody>';
+                    document.body.appendChild(div);
+                }
+
+                carregarHistoricoComMedias();
+                
+                const totalMUs = document.getElementById('kpi-total-mus')?.innerText || '0';
+                const totalPallets = document.getElementById('kpi-total-pallets')?.innerText || '0';
+                const mediaAcoes = document.getElementById('kpi-media-acoes')?.innerText || '0';
+                
+                addResult('test-historico', `✅ Histórico carregado:`, 'success');
+                addResult('test-historico', `Total MUs: ${totalMUs}`, 'info');
+                addResult('test-historico', `Total Pallets: ${totalPallets}`, 'info');
+                addResult('test-historico', `Média de Ações: ${mediaAcoes}`, 'info');
+            } catch (e) {
+                addResult('test-historico', `❌ Erro: ${e.message}`, 'error');
+            }
+        }
+
+        function testarConsulta() {
+            document.getElementById('test-consulta').innerHTML = '';
+            
+            try {
+                // Criar container fake
+                if (!document.querySelector('.consulta-card-palete')) {
+                    const div = document.createElement('div');
+                    div.className = 'consulta-card-palete';
+                    div.innerHTML = '<table><tbody></tbody></table>';
+                    document.body.appendChild(div);
+                }
+
+                if (Object.keys(palletMUs).length > 0) {
+                    const paletId = Object.keys(palletMUs)[0];
+                    preencherConsultaMU(Object.keys(palletMUs)[0]);
+                    
+                    const rows = document.querySelector('.consulta-card-palete tbody')?.querySelectorAll('tr');
+                    addResult('test-consulta', `✅ Consulta carregada:`, 'success');
+                    addResult('test-consulta', `Palete: ${paletId}`, 'info');
+                    addResult('test-consulta', `MUs encontradas: ${rows?.length || 0}`, 'info');
+                } else {
+                    addResult('test-consulta', `⚠️ Nenhum palete com MUs para testar`, 'info');
+                }
+            } catch (e) {
+                addResult('test-consulta', `❌ Erro: ${e.message}`, 'error');
+            }
+        }
+
+        // Auto-executar ao carregar
+        window.addEventListener('load', () => {
+            console.log('🧪 Sistema de testes carregado');
+            console.log('Funções disponíveis:', {
+                obterStatusZonas: typeof obterStatusZonas,
+                atualizarDashboard: typeof atualizarDashboard,
+                carregarHistoricoComMedias: typeof carregarHistoricoComMedias,
+                preencherConsultaMU: typeof preencherConsultaMU,
+                exibirDetalheMU: typeof exibirDetalheMU
+            });
+        });
+    </script>
+</body>
+</html>
