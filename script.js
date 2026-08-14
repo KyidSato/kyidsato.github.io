@@ -1,10 +1,18 @@
+// ==================================================================
+// 1. GERENCIAMENTO DE AUTENTICAÇÃO E LOGIN
+// ==================================================================
+
 // Alternar abas do painel de login
-function switchAuthTab(tabName) {
+function switchAuthTab(tabName, event) {
     document.querySelectorAll('.auth-tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
 
-    document.getElementById(`tab-${tabName}`).classList.add('active');
-    event.currentTarget.classList.add('active');
+    const targetTab = document.getElementById(`tab-${tabName}`);
+    if (targetTab) targetTab.classList.add('active');
+    
+    if (event && event.currentTarget) {
+        event.currentTarget.classList.add('active');
+    }
 
     if (tabName === 'status') {
         atualizarStatusSessaoUI();
@@ -18,6 +26,11 @@ function realizarCadastro(event) {
     const usuario = document.getElementById('reg-username').value.trim().toLowerCase();
     const senha = document.getElementById('reg-password').value.trim();
 
+    if (!nome || !usuario || !senha) {
+        exibirToast('error', 'Erro no Cadastro', 'Preencha todos os campos obrigatórios.');
+        return;
+    }
+
     let usuariosCadastrados = JSON.parse(localStorage.getItem('wms_usuarios_sistema')) || [];
 
     if (usuariosCadastrados.some(u => u.usuario === usuario)) {
@@ -29,10 +42,11 @@ function realizarCadastro(event) {
     localStorage.setItem('wms_usuarios_sistema', JSON.stringify(usuariosCadastrados));
 
     exibirToast('success', 'Cadastro concluído', `Operador "${nome}" cadastrado com sucesso! Faça login.`);
+    
     document.getElementById('reg-fullname').value = '';
     document.getElementById('reg-username').value = '';
     document.getElementById('reg-password').value = '';
-    switchAuthTab('login');
+    switchAuthTab('login', null);
 }
 
 // Processo de Login (Remove o bloqueio visual da tela)
@@ -43,7 +57,7 @@ function realizarLogin(event) {
 
     let usuariosCadastrados = JSON.parse(localStorage.getItem('wms_usuarios_sistema')) || [];
 
-    // Cria um usuário padrão caso a lista esteja vazia na primeira execução
+    // Cria um usuário admin padrão caso a base esteja vazia
     if (usuariosCadastrados.length === 0) {
         usuariosCadastrados.push({ nome: "Maycon Sato", usuario: "admin", senha: "123" });
         localStorage.setItem('wms_usuarios_sistema', JSON.stringify(usuariosCadastrados));
@@ -52,15 +66,12 @@ function realizarLogin(event) {
     const usuarioEncontrado = usuariosCadastrados.find(u => u.usuario === usuarioInput && u.senha === senhaInput);
 
     if (usuarioEncontrado) {
-        // Grava a sessão ativa para rastreabilidade nas ações do WMS
         const dadosSessao = `${usuarioEncontrado.nome} (${usuarioEncontrado.usuario})`;
         localStorage.setItem('usuario_ativo_wms', dadosSessao);
+        localStorage.setItem('wms_login_timestamp', Date.now()); // Reseta o timer no login
 
-        // Remove a camada de bloqueio visual da tela
         const authContainer = document.getElementById('auth-system-container');
-        if (authContainer) {
-            authContainer.style.display = 'none';
-        }
+        if (authContainer) authContainer.style.display = 'none';
 
         console.log(`🔓 Acesso liberado para: ${dadosSessao}`);
         exibirToast('success', 'Login bem-sucedido', `Bem-vindo, ${usuarioEncontrado.nome}!`);
@@ -77,26 +88,12 @@ function atualizarStatusSessaoUI() {
     }
 }
 
-// Verifica no carregamento da página se o bloqueio deve persistir ou ser removido
-document.addEventListener('DOMContentLoaded', () => {
-    const usuarioAtivo = localStorage.getItem('usuario_ativo_wms');
-    const authContainer = document.getElementById('auth-system-container');
-
-    if (usuarioAtivo) {
-        // Se já estiver logado, oculta o bloqueio imediatamente ao abrir a página
-        if (authContainer) authContainer.style.display = 'none';
-    } else {
-        // Se não estiver logado, garante que o bloqueio permaneça visível
-        if (authContainer) authContainer.style.display = 'flex';
-    }
-});
 // ==================================================================
-// GERENCIAMENTO DE CONFIGURAÇÕES, SESSÃO E TEMAS
+// 2. CONFIGURAÇÕES, SESSÃO E TEMAS
 // ==================================================================
 
 let timerInterval = null;
 
-// Abrir e Fechar Modal de Configurações
 function abrirConfiguracoes() {
     const modal = document.getElementById('config-modal');
     if (modal) {
@@ -113,14 +110,11 @@ function fecharConfiguracoes() {
     }
 }
 
-// Carregar informações atuais do operador e iniciar cronômetro
 function carregarDadosConfiguracao() {
-    // 1. Mostrar nome do usuário logado
     const usuarioAtivo = localStorage.getItem('usuario_ativo_wms') || 'Não identificado';
     const nomeEl = document.getElementById('cfg-user-name');
     if (nomeEl) nomeEl.innerText = usuarioAtivo;
 
-    // 2. Controlar Cronômetro de Tempo Logado
     if (!localStorage.getItem('wms_login_timestamp')) {
         localStorage.setItem('wms_login_timestamp', Date.now());
     }
@@ -146,20 +140,12 @@ function atualizarCronometroSessao() {
     }
 }
 
-// Sistema de Troca de Temas (Dark, Light, Meli)
 function mudarTema(tema) {
     document.body.classList.remove('theme-dark', 'theme-light', 'theme-meli');
     document.body.classList.add(`theme-${tema}`);
     localStorage.setItem('wms_current_theme', tema);
 }
 
-// Aplicar tema salvo ao carregar a página
-document.addEventListener('DOMContentLoaded', () => {
-    const temaSalvo = localStorage.getItem('wms_current_theme') || 'dark';
-    mudarTema(temaSalvo);
-});
-
-// Alterar senha do operador logado
 function alterarSenhaOperador(event) {
     event.preventDefault();
     const senhaAntiga = document.getElementById('cfg-old-pass').value.trim();
@@ -171,45 +157,45 @@ function alterarSenhaOperador(event) {
         return;
     }
 
-    // Extrai o nome de usuário (matrícula) armazenado entre parênteses
     const matchUser = sessaoCompleta.match(/\(([^)]+)\)$/);
     if (!matchUser) {
-        exibirToast('error', 'Erro de identificação', 'Erro ao identificar o identificador do usuário.');
+        exibirToast('error', 'Erro', 'Não foi possível identificar seu usuário.');
         return;
     }
+    
     const usuarioMatricula = matchUser[1];
-
     let usuariosCadastrados = JSON.parse(localStorage.getItem('wms_usuarios_sistema')) || [];
     const indexUser = usuariosCadastrados.findIndex(u => u.usuario === usuarioMatricula);
 
-    if (indexUser !== -1) {
-        if (usuariosCadastrados[indexUser].senha === senhaAntiga) {
-            usuariosCadastrados[indexUser].senha = senhaNova;
-            localStorage.setItem('wms_usuarios_sistema', JSON.stringify(usuariosCadastrados));
-            exibirToast('success', 'Senha alterada', 'Sua senha foi alterada com sucesso!');
-            document.getElementById('cfg-old-pass').value = '';
-            document.getElementById('cfg-new-pass').value = '';
-        } else {
-            exibirToast('error', 'Senha incorreta', 'A senha atual está incorreta!');
-        }
+    if (indexUser !== -1 && usuariosCadastrados[indexUser].senha === senhaAntiga) {
+        usuariosCadastrados[indexUser].senha = senhaNova;
+        localStorage.setItem('wms_usuarios_sistema', JSON.stringify(usuariosCadastrados));
+        exibirToast('success', 'Senha alterada', 'Sua senha foi alterada com sucesso!');
+        document.getElementById('cfg-old-pass').value = '';
+        document.getElementById('cfg-new-pass').value = '';
     } else {
-        exibirToast('error', 'Usuário não encontrado', 'Usuário não encontrado na base de registros.');
+        exibirToast('error', 'Senha incorreta', 'A senha atual informada está errada.');
     }
 }
 
-// Fazer Logout (Encerra a sessão e exibe o bloqueio de acesso)
 function realizarLogout() {
     if (confirm('Deseja realmente encerrar a sessão?')) {
         localStorage.removeItem('usuario_ativo_wms');
         localStorage.removeItem('wms_login_timestamp');
-        location.reload(); // Recarrega a página exibindo a tela de bloqueio de login novamente
+        location.reload(); 
     }
 }
 
+// ==================================================================
+// 3. FEEDBACK VISUAL (TOASTS E NOTIFICAÇÕES)
+// ==================================================================
+
 function exibirToast(tipo, titulo, mensagem, tempo = 3500) {
     const toastStack = document.getElementById('toast-stack');
+    
+    // CORREÇÃO: Impede loop infinito caso o HTML não tenha a div toast-stack
     if (!toastStack) {
-        exibirToast('info', 'Informação', `${titulo}\n${mensagem}`);
+        console.warn(`[Toast ${tipo.toUpperCase()}] ${titulo}: ${mensagem}`);
         return;
     }
 
@@ -255,7 +241,26 @@ function mostrarAvisoOperacional(tipo, titulo, mensagem) {
 }
 
 // ==================================================================
-// 1. CONFIGURAÇÕES, CONSTANTES E VARIÁVEIS GLOBAIS
+// 4. INICIALIZAÇÃO DE PÁGINA (CHECK DE SESSÃO)
+// ==================================================================
+document.addEventListener('DOMContentLoaded', () => {
+    // 1. Checa Tema
+    const temaSalvo = localStorage.getItem('wms_current_theme') || 'dark';
+    mudarTema(temaSalvo);
+
+    // 2. Checa Bloqueio de Tela (Login)
+    const usuarioAtivo = localStorage.getItem('usuario_ativo_wms');
+    const authContainer = document.getElementById('auth-system-container');
+
+    if (usuarioAtivo) {
+        if (authContainer) authContainer.style.display = 'none';
+    } else {
+        if (authContainer) authContainer.style.display = 'flex';
+    }
+});
+
+/// ==================================================================
+// 5. CONFIGURAÇÕES GLOBAIS (VARIÁVEIS) E ESTADO
 // ==================================================================
 let selectedElement = null;
 let selectedName = '';
@@ -267,9 +272,7 @@ const MAX_GREEN_PALLETS = 12;
 
 // Armazena as MUs cadastradas temporariamente por ID do elemento do palete
 const palletMUs = {};
-
-// Rastreia localização de paletes (PL) e suas ruas
-const palletLocation = {}; // formato: { "PL-01": "R-A", "PL-02": "R-B" }
+const palletLocation = {}; // { "PL-01": "R-A" }
 
 const LANE_CODES = {
     'RUA A': 'R-A',
@@ -293,55 +296,57 @@ let paleteAtualGlobal = null;
 const GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbxPsyrJdzUQJFKh_3xnA-PkKINZkZCCeCnJN9KCd9IXca4bWU2wtXS101DQbf9qLi3A_g/exec";
 
 // ==================================================================
-// 2. INICIALIZAÇÃO CENTRALIZADA (DOM CONTENT LOADED)
+// 6. INICIALIZAÇÃO CENTRALIZADA (DOM CONTENT LOADED)
 // ==================================================================
 document.addEventListener('DOMContentLoaded', () => {
-    // Trava de texto de interface
+    // 1. Trava de texto de interface (Evita edição acidental)
     document.body.removeAttribute('contenteditable');
     const protectedSelectors = 'h1, h2, h3, h4, h5, h6, span, p, label, .zone-header, .lane-title, .app-drawer h2, .main-navbar';
     document.querySelectorAll(protectedSelectors).forEach(el => {
         el.contentEditable = "false";
     });
 
-    // Carrega estado geral salvo no navegador
+    // 2. Carrega estado geral salvo no navegador
     carregarEstadoGeral();
     updateRedCounter();
 
-    // Carregamentos específicos de telas (se os elementos existirem)
+    // 3. Verifica e inicializa telas específicas
     if (document.getElementById('history-table-body')) {
-        carregarDadosDoSheets();
+        if (typeof carregarDadosDoSheets === 'function') carregarDadosDoSheets();
     }
     if (document.getElementById('graficoErros')) {
-        carregarDadosDashboard();
-        setInterval(carregarDadosDashboard, 60000);
+        if (typeof carregarDadosDashboard === 'function') {
+            carregarDadosDashboard();
+            setInterval(carregarDadosDashboard, 60000); // Atualiza a cada 1 min
+        }
     }
 
-    // Eventos globais de busca e botões operacionais da MU
+    // 4. Eventos Globais da Tela de Consulta
     const btnSearch = document.querySelector('.btn-search');
-    if (btnSearch) btnSearch.addEventListener('click', realizarConsulta);
+    if (btnSearch && typeof realizarConsulta === 'function') btnSearch.addEventListener('click', realizarConsulta);
 
     const inputSearch = document.getElementById('search-input');
     if (inputSearch) {
         inputSearch.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') realizarConsulta();
+            if (e.key === 'Enter' && typeof realizarConsulta === 'function') realizarConsulta();
         });
     }
 
     const btnRemover = document.querySelector('.action-buttons .btn-action.danger');
-    if (btnRemover) btnRemover.addEventListener('click', removerMUAtual);
+    if (btnRemover && typeof removerMUAtual === 'function') btnRemover.addEventListener('click', removerMUAtual);
 
     const btnMover = document.querySelector('.action-buttons .btn-action.primary');
-    if (btnMover) btnMover.addEventListener('click', moverMUAtual);
+    if (btnMover && typeof moverMUAtual === 'function') btnMover.addEventListener('click', moverMUAtual);
 
     const btnAlterarStatus = document.getElementById('btn-alterar-status');
-    if (btnAlterarStatus) btnAlterarStatus.addEventListener('click', alterarStatusMUAtual);
+    if (btnAlterarStatus && typeof alterarStatusMUAtual === 'function') btnAlterarStatus.addEventListener('click', alterarStatusMUAtual);
 
     const btnSelecionarErros = document.getElementById('btn-selecionar-erros');
-    if (btnSelecionarErros) btnSelecionarErros.addEventListener('click', abrirModalSelecaoErros);
+    if (btnSelecionarErros && typeof abrirModalSelecaoErros === 'function') btnSelecionarErros.addEventListener('click', abrirModalSelecaoErros);
 });
 
 // ==================================================================
-// 3. ESTADO, PERSISTÊNCIA E LOCALSTORAGE
+// 7. PERSISTÊNCIA (LOCALSTORAGE)
 // ==================================================================
 function salvarEstadoGeral() {
     localStorage.setItem('buffer_pallets', JSON.stringify(palletMUs));
@@ -398,7 +403,7 @@ function carregarEstadoGeral() {
 }
 
 // ==================================================================
-// 4. SELEÇÃO E AÇÕES DE PALETES
+// 8. SELEÇÃO E AÇÕES DE PALETES (PAINEL INFERIOR)
 // ==================================================================
 function selectPalletElement(element, name) {
     if (!element) return;
@@ -421,6 +426,14 @@ function selectPalletElement(element, name) {
     `);
 }
 
+function updateStatus(htmlContent) {
+    const statusElement = document.getElementById('app-status');
+    if (statusElement) {
+        statusElement.innerHTML = htmlContent;
+    }
+}
+
+// Função utilitária para buscar zona
 function getPalletZone(palletElement) {
     if (!palletElement) return null;
     if (palletElement.closest('.red-zone')) return 'vermelha';
@@ -430,62 +443,9 @@ function getPalletZone(palletElement) {
     return null;
 }
 
-function validarMovimentacaoPallet(palletElement, destino) {
-    if (!palletElement) return { ok: false, motivo: 'Palete não encontrado.' };
-
-    const origem = getPalletZone(palletElement);
-    const idPallet = palletElement.innerText.trim();
-    const mus = palletMUs[palletElement.id] || [];
-
-    if (!origem) {
-        return { ok: false, motivo: 'Palete sem zona válida para movimentação.' };
-    }
-
-    if (destino === 'amarela') {
-        if (origem !== 'vermelha') {
-            return { ok: false, motivo: `O palete ${idPallet} só pode entrar na Zona Amarela a partir da Zona Vermelha.` };
-        }
-        if (document.querySelectorAll('#yellow-stack .pallet').length >= MAX_YELLOW_PALLETS) {
-            return { ok: false, motivo: 'A Zona Amarela atingiu a capacidade máxima de 6 paletes.' };
-        }
-    }
-
-    if (destino === 'rua') {
-        if (origem !== 'amarela') {
-            return { ok: false, motivo: `O palete ${idPallet} só pode ir para rua após passar pela zona amarela.` };
-        }
-        if (!palletElement.classList.contains('blue')) {
-            return { ok: false, motivo: 'A rua exige palete com ID vinculado (status azul).'};
-        }
-    }
-
-    if (destino === 'verde') {
-        if (origem !== 'rua') {
-            return { ok: false, motivo: `O palete ${idPallet} precisa estar em rua para ser liberado para expedição.` };
-        }
-        if (mus.length === 0) {
-            return { ok: false, motivo: 'Não é permitido liberar para a Zona Verde um palete sem MU cadastrada.' };
-        }
-        if (document.querySelectorAll('.green-zone .pallet').length >= MAX_GREEN_PALLETS) {
-            return { ok: false, motivo: 'A Zona Verde atingiu a capacidade máxima de 12 paletes.' };
-        }
-    }
-
-    if (destino === 'vermelha') {
-        if (origem === 'vermelha') {
-            return { ok: false, motivo: 'O palete já está na Zona Vermelha.' };
-        }
-        if (document.querySelectorAll('#red-stack .pallet').length >= MAX_RED_PALLETS) {
-            return { ok: false, motivo: 'Capacidade máxima da Zona Vermelha atingida.' };
-        }
-    }
-
-    return { ok: true };
-}
-
 function triggerAction(actionName) {
     if (!selectedElement) {
-        exibirToast('info', 'Informação', '\u274c Selecione um palete antes de executar a opera\u00e7\u00e3o.');;
+        exibirToast('info', 'Atenção', 'Selecione um palete no mapa antes de executar a operação.');
         return;
     }
 
@@ -493,6 +453,7 @@ function triggerAction(actionName) {
 
     if (actionName === 'Checagem HH') {
         if (!selectedElement.classList.contains('yellow-no-id')) {
+            exibirToast('warning', 'Operação Inválida', 'Selecione um palete Laranja na Zona Amarela para fazer a checagem.');
             return;
         }
 
@@ -500,12 +461,15 @@ function triggerAction(actionName) {
         selectedElement.innerText = 'Check';
         palletMUs[elementId] = [];
 
+        exibirToast('success', 'Checagem Concluída', 'O palete agora está amarelo e pronto para receber MUs.');
         updateStatus(`🟡 <strong>Checagem HH concluída!</strong><br>📍 Pronto para bipagem e cadastro de MUs.`);
+        salvarEstadoGeral();
         return;
     }
 
     if (actionName === 'Cadastrar MU' || actionName === 'Cadastrar ID') {
         if (!selectedElement.classList.contains('yellow-checked')) {
+            exibirToast('error', 'Ação Bloqueada', 'Realize a "Checagem HH" primeiro!');
             return;
         }
 
@@ -515,10 +479,9 @@ function triggerAction(actionName) {
 
         while (bipando && currentMUs.length < 30) {
             const inputMU = prompt(
-                `📦 [CADASTRO DE MUs - PALETE]\n` +
+                `📦 [CADASTRO DE MUs]\n` +
                 `MUs Atuais: ${currentMUs.length}/30\n\n` +
-                `Bipe a MU com o leitor QR Code ou digite o código:\n` +
-                `(Ex: MU-TT-RC-20A-123)\n\n` +
+                `Bipe a MU com o leitor QR Code ou digite o código:\n\n` +
                 `(Clique em 'Cancelar' para encerrar a bipagem)`
             );
 
@@ -526,26 +489,34 @@ function triggerAction(actionName) {
                 bipando = false;
             } else {
                 const muCode = inputMU.trim().toUpperCase();
+                
+                // Validações restauradas e ajustadas
                 if (!muCode.startsWith('MU')) {
+                    alert('Erro: A MU deve começar com a sigla "MU".');
                 } else if (muCode.length !== 16) {
+                    alert('Erro: O código da MU deve conter exatamente 16 caracteres.');
                 } else if (currentMUs.includes(muCode)) {
+                    alert('Aviso: Esta MU já foi bipada neste palete!');
                 } else {
                     currentMUs.push(muCode);
                 }
             }
         }
 
+        salvarEstadoGeral();
         updateStatus(`📦 <strong>MUs cadastradas:</strong> ${currentMUs.length}/30`);
         return;
     }
 
     if (actionName === 'Vincular ID') {
         if (!selectedElement.classList.contains('yellow-checked')) {
+            exibirToast('error', 'Ação Bloqueada', 'Palete não elegível para vínculo de Placa.');
             return;
         }
 
         let currentMUs = palletMUs[elementId] || [];
         if (currentMUs.length === 0) {
+            exibirToast('warning', 'Palete Vazio', 'Cadastre pelo menos uma MU antes de vincular a Placa (ID).');
             return;
         }
 
@@ -554,12 +525,13 @@ function triggerAction(actionName) {
 
         while (!idValido) {
             const suggestedID = `PL-${String(currentIdCounter).padStart(2, '0')}`;
-            const inputID = prompt('🏷️ [VINCULAR PLACA DE ID]\nDigite o ID do Palete:', suggestedID);
+            const inputID = prompt('🏷️ [VINCULAR PLACA DE ID]\nDigite o ID do Palete (Ex: PL-01):', suggestedID);
 
             if (inputID === null || inputID.trim() === '') return;
 
             const inputFormatado = inputID.trim().toUpperCase();
             if (!/^PL-?\d+$/.test(inputFormatado)) {
+                alert('O ID deve começar com "PL" seguido de números (ex: PL-01).');
             } else {
                 finalID = inputFormatado;
                 idValido = true;
@@ -568,14 +540,19 @@ function triggerAction(actionName) {
 
         selectedElement.innerText = finalID;
         selectedElement.className = 'pallet blue selected';
+        
+        exibirToast('success', 'Vínculo Concluído', `Palete registrado como ${finalID} e liberado para as ruas!`);
         updateStatus(`🔵 <strong>Palete liberado para as ruas!</strong> Placa: ${finalID}`);
+        
         if (currentIdCounter < 99) currentIdCounter++;
+        salvarEstadoGeral();
         return;
     }
 
     if (actionName === 'Despachar PL') {
         const isZonaVerde = selectedElement.closest('.green-zone') !== null || selectedElement.classList.contains('green');
         if (!isZonaVerde) {
+            exibirToast('error', 'Despacho Negado', 'O palete precisa estar na Zona Verde (Expedição) para ser despachado.');
             return;
         }
 
@@ -583,14 +560,18 @@ function triggerAction(actionName) {
         const musPallet = palletMUs[elementId] || [];
 
         if (musPallet.length === 0) {
+            exibirToast('warning', 'Erro Crítico', 'Tentativa de despachar palete sem MUs.');
             return;
         }
 
-        if (confirm(`🚚 Confirma o despacho do Palete ${idPallet} com ${musPallet.length} MUs?`)) {
+        if (confirm(`🚚 Confirma o despacho do Palete ${idPallet} com ${musPallet.length} MUs para a nuvem?`)) {
             const dataAtual = new Date();
             const dataHoraFormatada = dataAtual.toLocaleString('pt-BR');
             const usuarioLogado = localStorage.getItem('usuario_ativo_wms') || 'Usuário Padrão';
-            const historicoGlobal = Object.values(getHistoricoMUs()).flat();
+            
+            // Garantindo segurança caso getHistoricoMUs não esteja definida
+            const historicoGlobal = typeof getHistoricoMUs === 'function' ? Object.values(getHistoricoMUs()).flat() : [];
+            
             const registrosParaEnviar = musPallet.map(mu => {
                 const acoesRealizadas = historicoGlobal.filter(reg => reg.evento && reg.evento.includes(mu)).length;
                 return {
@@ -607,6 +588,7 @@ function triggerAction(actionName) {
             historicoLocal.push(...registrosParaEnviar);
             localStorage.setItem('buffer_historico', JSON.stringify(historicoLocal));
 
+            // Envia para o Google Sheets (em background)
             const SCRIPT_URL = GOOGLE_SHEETS_URL;
             const formData = new URLSearchParams();
             formData.append('payload', JSON.stringify(registrosParaEnviar));
@@ -618,9 +600,13 @@ function triggerAction(actionName) {
                 body: formData.toString()
             }).catch(err => console.error('Erro ao enviar para planilha:', err));
 
+            // Limpa o palete da interface e da memória
             delete palletMUs[elementId];
             selectedElement.remove();
             selectedElement = null;
+            
+            salvarEstadoGeral();
+            exibirToast('success', 'Despacho Executado', `Palete ${idPallet} despachado. Planilha em atualização.`);
             updateStatus(`🟢 <strong>Palete ${idPallet} despachado com sucesso!</strong>`);
         }
         return;
@@ -628,7 +614,7 @@ function triggerAction(actionName) {
 }
 
 // ==================================================================
-// 5. DRAG & DROP E EVENTOS DE LAYOUT
+// 9. EVENTOS DRAG & DROP E LAYOUT
 // ==================================================================
 function allowDrop(event) {
     event.preventDefault();
@@ -660,8 +646,15 @@ document.addEventListener('dragleave', (e) => {
     }
 });
 
+// Helper para evitar erros de atualizar gráfico em tela de mapa
+function chamarDashboardBackground() {
+    if (typeof atualizarDashboard === 'function' && document.getElementById('graficoErros')) {
+        atualizarDashboard();
+    }
+}
+
 // ==================================================================
-// 6. REGRAS DA ZONA VERMELHA
+// 10. REGRAS DA ZONA VERMELHA
 // ==================================================================
 function getNextAvailableRedNumber() {
     const stack = document.getElementById('red-stack');
@@ -705,6 +698,7 @@ function addRedPallet() {
 
     stack.appendChild(pallet);
     updateRedCounter();
+    salvarEstadoGeral();
     updateStatus(`🔴 <strong>Pallet ${palletLabel} criado na Zona Vermelha.</strong>`);
 }
 
@@ -721,6 +715,7 @@ function removeRedPallet() {
 
     stack.removeChild(lastPallet);
     updateRedCounter();
+    salvarEstadoGeral();
     updateStatus(`🗑️ <strong>Pallet removido da Zona Vermelha.</strong>`);
 }
 
@@ -757,13 +752,14 @@ function dropPalletRed(event, redContainer) {
 
         redContainer.appendChild(draggedPallet);
         updateRedCounter();
+        salvarEstadoGeral();
         updateStatus(`🔴 <strong>Palete retornado à Zona Vermelha.</strong>`);
-        setTimeout(atualizarDashboard, 500);
+        setTimeout(chamarDashboardBackground, 500);
     }
 }
 
 // ==================================================================
-// 7. REGRAS DA ZONA AMARELA E RUAS (ZONA CINZA) & ZONA VERDE
+// 11. REGRAS DA ZONA AMARELA E RUAS (ZONA CINZA) & ZONA VERDE
 // ==================================================================
 function dropPalletYellow(event, yellowContainer) {
     event.preventDefault();
@@ -777,7 +773,7 @@ function dropPalletYellow(event, yellowContainer) {
     const isFromGreen = draggedPallet.classList.contains('green') || sourceZone.classList.contains('green-zone');
     const currentPL = draggedPallet.innerText.trim();
 
-    // Fluxo: Expedição → Triagem (reset do palete, desvincula PL)
+    // Expedição → Triagem (reset do palete, desvincula PL)
     if (isFromGreen) {
         const inputPL = prompt(`📦 Qual PL está sendo retornado?\n(Palete atual: ${currentPL})`);
         if (inputPL === null) return;
@@ -788,28 +784,29 @@ function dropPalletYellow(event, yellowContainer) {
         }
 
         if (yellowContainer.querySelectorAll('.pallet').length >= MAX_YELLOW_PALLETS) {
-            exibirToast('info', 'Informação', '🚫 A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
+            exibirToast('info', 'Limite de Capacidade', 'A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
             return;
         }
 
-        // Reset: desvincula PL
         draggedPallet.className = 'pallet yellow-checked';
         draggedPallet.innerText = 'Check';
         delete palletLocation[currentPL];
+        
         yellowContainer.appendChild(draggedPallet);
         updateRedCounter();
+        salvarEstadoGeral();
         updateStatus('🔄 <strong>Palete retornado à triagem.</strong> PL desvinculada.');
         return;
     }
 
     const validacao = validarMovimentacaoPallet(draggedPallet, 'amarela');
     if (!validacao.ok) {
-        exibirToast('info', 'Informação', `🚫 ${validacao.motivo}`);
+        exibirToast('warning', 'Movimento Inválido', validacao.motivo);
         return;
     }
 
     if (yellowContainer.querySelectorAll('.pallet').length >= MAX_YELLOW_PALLETS) {
-        exibirToast('info', 'Informação', '🚫 A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
+        exibirToast('info', 'Limite de Capacidade', 'A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
         return;
     }
 
@@ -820,8 +817,9 @@ function dropPalletYellow(event, yellowContainer) {
         draggedPallet.setAttribute('onclick', `selectPalletElement(this, '${draggedPallet.id}')`);
 
         updateRedCounter();
+        salvarEstadoGeral();
         updateStatus('🟠 <strong>Pallet na triagem.</strong> Aguardando checagem HH.');
-        setTimeout(atualizarDashboard, 500);
+        setTimeout(chamarDashboardBackground, 500);
         return;
     }
 }
@@ -858,25 +856,24 @@ function dropPallet(event, laneElement) {
     const isFromGreen = draggedPallet.classList.contains('green') || sourceZone.classList.contains('green-zone');
     const isFromStreet = sourceZone.closest('.street-lane') !== null;
 
-    // Validação básica
     const validacao = validarMovimentacaoPallet(draggedPallet, 'rua');
     if (!validacao.ok) {
-        exibirToast('info', 'Informação', `🚫 ${validacao.motivo}`);
+        exibirToast('warning', 'Movimento Inválido', validacao.motivo);
         return;
     }
 
     if (sourceZone.id === 'red-stack') {
-        exibirToast('info', 'Informação', '🚫 Paletes da Zona Vermelha devem passar pela Zona Amarela antes da rua.');
+        exibirToast('warning', 'Movimento Inválido', 'Paletes da Zona Vermelha devem passar pela Zona Amarela antes da rua.');
         return;
     }
 
     if (isFromYellow && !draggedPallet.classList.contains('blue')) {
-        exibirToast('info', 'Informação', '🚫 O palete precisa ter o ID vinculado (azul) para entrar na rua.');
+        exibirToast('error', 'Sem Identificação', 'O palete precisa ter a Placa (ID) vinculada antes de entrar na rua.');
         return;
     }
 
     if (laneElement.querySelectorAll('.pallet').length >= 6 && !laneElement.contains(draggedPallet)) {
-        exibirToast('info', 'Informação', '🚫 Esta rua atingiu o limite máximo de 6 paletes.');
+        exibirToast('info', 'Rua Cheia', 'Esta rua atingiu o limite máximo de 6 paletes.');
         return;
     }
 
@@ -890,20 +887,24 @@ function dropPallet(event, laneElement) {
 
         const ruaNormalizada = inputRua.trim().toUpperCase();
         if (ruaNormalizada !== targetLaneCode) {
-            exibirToast('error', 'Dados não conferem', `Você informou rua "${ruaNormalizada}" mas a rua de destino é "${targetLaneCode}".`);
+            exibirToast('error', 'Dados não conferem', `Rua informada (${ruaNormalizada}) não bate com a rua de destino (${targetLaneCode}).`);
             return;
         }
+        
         palletLocation[currentPL] = targetLaneCode;
         const isSelected = draggedPallet.classList.contains('selected');
         draggedPallet.className = `pallet blue${isSelected ? ' selected' : ''}`;
+        
         laneElement.appendChild(draggedPallet);
         updateRedCounter();
+        salvarEstadoGeral();
+        
         exibirToast('success', 'Triagem → Rua', `PL ${currentPL} movido para ${targetLaneCode}`);
         updateStatus('🚚 <strong>Palete alocado na rua.</strong>');
         return;
     }
 
-    // Fluxo: Entre Ruas (solicita PL e rua)
+    // Fluxo: Entre Ruas (Troca)
     if (isFromStreet && !isFromGreen) {
         const currentStreetLane = sourceZone.closest('.street-lane');
         const currentLaneCode = getTargetLaneCode(currentStreetLane);
@@ -911,25 +912,29 @@ function dropPallet(event, laneElement) {
         const inputPL = prompt(`📦 Qual PL está sendo movimentado?\n(Palete atual: ${currentPL})`);
         if (inputPL === null) return;
         
-        const inputRua = prompt(`🚚 Qual é a nova rua (R-A, R-B, R-C, R-D, R-E)?\n(De: ${currentLaneCode}, Para: ${targetLaneCode})`);
+        const inputRua = prompt(`🚚 Qual é a nova rua?\n(De: ${currentLaneCode}, Para: ${targetLaneCode})`);
         if (inputRua === null) return;
 
         const ruaNormalizada = inputRua.trim().toUpperCase();
         if (ruaNormalizada !== targetLaneCode) {
-            exibirToast('error', 'Dados não conferem', `Você informou rua "${ruaNormalizada}" mas a rua de destino é "${targetLaneCode}".`);
+            exibirToast('error', 'Dados não conferem', `Rua informada (${ruaNormalizada}) não bate com a rua de destino (${targetLaneCode}).`);
             return;
         }
+        
         palletLocation[currentPL] = targetLaneCode;
         const isSelected = draggedPallet.classList.contains('selected');
         draggedPallet.className = `pallet blue${isSelected ? ' selected' : ''}`;
+        
         laneElement.appendChild(draggedPallet);
         updateRedCounter();
+        salvarEstadoGeral();
+        
         exibirToast('success', 'Troca de Rua', `PL ${currentPL} movido de ${currentLaneCode} para ${targetLaneCode}`);
         updateStatus('🚚 <strong>Palete movido para outra rua.</strong>');
         return;
     }
 
-    // Fluxo: Verde → Ruas (reset do palete, desvincula PL)
+    // Fluxo: Expedição → Ruas (Retorno Inverso/Reset)
     if (isFromGreen) {
         const inputPL = prompt(`📦 Qual PL está sendo retornado?\n(Palete atual: ${currentPL})`);
         if (inputPL === null) return;
@@ -939,22 +944,25 @@ function dropPallet(event, laneElement) {
 
         const ruaNormalizada = inputRua.trim().toUpperCase();
         if (ruaNormalizada !== targetLaneCode) {
-            exibirToast('error', 'Dados não conferem', `Você informou rua "${ruaNormalizada}" mas a rua de destino é "${targetLaneCode}".`);
+            exibirToast('error', 'Dados não conferem', `Rua informada (${ruaNormalizada}) não bate com a rua de destino (${targetLaneCode}).`);
             return;
         }
 
-        // Reset: desvincula PL
         draggedPallet.className = 'pallet yellow-checked';
         draggedPallet.innerText = 'Check';
         delete palletLocation[currentPL];
+        
         laneElement.appendChild(draggedPallet);
         updateRedCounter();
-        exibirToast('info', 'Retorno à Triagem', `PL ${currentPL} retornado à triagem. ID desvinculado.`);
-        updateStatus('🔄 <strong>Palete retornado à triagem.</strong> PL desvinculada.');
-        setTimeout(atualizarDashboard, 500);
+        salvarEstadoGeral();
+        
+        exibirToast('info', 'Retorno Inverso', `PL ${currentPL} retornou da Expedição. ID desvinculado.`);
+        updateStatus('🔄 <strong>Palete retornado.</strong> PL desvinculada.');
+        setTimeout(chamarDashboardBackground, 500);
         return;
     }
-    setTimeout(atualizarDashboard, 500);
+    
+    setTimeout(chamarDashboardBackground, 500);
 }
 
 function dropPalletGreen(event, greenContainer) {
@@ -967,16 +975,15 @@ function dropPalletGreen(event, greenContainer) {
 
     const validacao = validarMovimentacaoPallet(draggedPallet, 'verde');
     if (!validacao.ok) {
-        exibirToast('info', 'Informação', `🚫 ${validacao.motivo}`);
+        exibirToast('warning', 'Movimento Inválido', validacao.motivo);
         return;
     }
 
     if (greenContainer.querySelectorAll('.pallet').length >= MAX_GREEN_PALLETS) {
-        exibirToast('info', 'Informação', '🚫 A Zona Verde atingiu a capacidade máxima de 12 paletes.');
+        exibirToast('info', 'Limite de Capacidade', 'A Zona Verde atingiu a capacidade máxima de 12 paletes.');
         return;
     }
 
-    // Fluxo: Ruas → Verde (solicita confirmação)
     const currentPL = draggedPallet.innerText.trim();
     if (!confirm(`✅ Confirma movimentação do palete ${currentPL} para expedição?`)) {
         return;
@@ -984,53 +991,18 @@ function dropPalletGreen(event, greenContainer) {
 
     const isSelected = draggedPallet.classList.contains('selected');
     draggedPallet.className = `pallet green${isSelected ? ' selected' : ''}`;
+    
     greenContainer.appendChild(draggedPallet);
     updateRedCounter();
+    salvarEstadoGeral();
 
+    exibirToast('success', 'Pronto para Despacho', `Palete ${currentPL} na expedição.`);
     updateStatus('🟢 <strong>Palete liberado para expedição.</strong>');
-    setTimeout(atualizarDashboard, 500);
+    setTimeout(chamarDashboardBackground, 500);
 }
-
-// Função para retornar palete de Verde para Triagem (reset)
-function dropPalletFromGreenToYellow(event, yellowContainer) {
-    event.preventDefault();
-    clearDragEffects();
-
-    const palletId = event.dataTransfer.getData('text/plain');
-    const draggedPallet = document.getElementById(palletId);
-    if (!draggedPallet || !draggedPallet.classList.contains('green')) return;
-
-    if (yellowContainer.querySelectorAll('.pallet').length >= MAX_YELLOW_PALLETS) {
-        exibirToast('info', 'Informação', '🚫 A Zona Amarela atingiu a capacidade máxima de 6 paletes.');
-        return;
-    }
-
-    const currentPL = draggedPallet.innerText.trim();
-    const inputPL = prompt(`📦 Qual PL está sendo retornado?\n(Palete atual: ${currentPL})`);
-    if (inputPL === null) return;
-
-    if (inputPL.trim().toUpperCase() !== currentPL) {
-        exibirToast('error', 'Erro', `❌ Dados não conferem! Você informou "${inputPL}" mas o palete é "${currentPL}".`);
-        return;
-    }
-
-    // Reset: desvincula PL
-    draggedPallet.className = 'pallet yellow-checked';
-    draggedPallet.innerText = 'Check';
-    delete palletLocation[currentPL];
-    yellowContainer.appendChild(draggedPallet);
-    updateRedCounter();
-
-    updateStatus('🔄 <strong>Palete retornado à triagem.</strong> PL desvinculada.');
-}
-
 // ==================================================================
-// 8. HELPERS DE STATUS, MODAL E DASHBOARD
+// 12. DASHBOARD, HISTÓRICO E DUPLO CLIQUE (MAPA)
 // ==================================================================
-function updateStatus(htmlContent) {
-    const statusElement = document.getElementById('app-status');
-    if (statusElement) statusElement.innerHTML = htmlContent;
-}
 
 // Duplo clique para visualizar resumo do palete
 document.addEventListener('dblclick', (event) => {
@@ -1045,13 +1017,16 @@ document.addEventListener('dblclick', (event) => {
     document.getElementById('modal-content').innerHTML = `
         <strong>📦 Total de MUs:</strong> ${mus.length}/30<br><br>
         <strong>--- MUs ---</strong><br>
-        ${mus.length > 0 ? mus.join('<br>') : 'Nenhuma MU cadastrada.'}
+        ${mus.length > 0 ? mus.join('<br>') : '<em>Nenhuma MU cadastrada.</em>'}
     `;
-    document.getElementById('pallet-modal').style.display = 'flex';
+    
+    const modal = document.getElementById('pallet-modal');
+    if (modal) modal.style.display = 'flex';
 });
 
 function fecharModalPalete() {
-    document.getElementById('pallet-modal').style.display = 'none';
+    const modal = document.getElementById('pallet-modal');
+    if (modal) modal.style.display = 'none';
 }
 
 // Google Sheets & Histórico
@@ -1066,8 +1041,8 @@ async function carregarDadosDoSheets() {
         calcularKPIs(dadosHistorico);
         renderizarTabela(dadosHistorico);
     } catch (erro) {
-        console.error("Erro ao carregar dados do Sheets:", erro);
-        dadosHistorico = simularDadosDeTeste();
+        console.warn("Aviso: Falha ao carregar do Sheets. Usando cache local.", erro);
+        dadosHistorico = JSON.parse(localStorage.getItem('buffer_historico')) || simularDadosDeTeste();
         calcularKPIs(dadosHistorico);
         renderizarTabela(dadosHistorico);
     }
@@ -1075,8 +1050,11 @@ async function carregarDadosDoSheets() {
 
 function calcularKPIs(dados) {
     if (!dados || dados.length === 0) return;
-    document.getElementById('kpi-total-mus').innerText = dados.length;
-    document.getElementById('kpi-total-pallets').innerText = new Set(dados.map(i => i.palletID)).size;
+    const elKpiMus = document.getElementById('kpi-total-mus');
+    const elKpiPallets = document.getElementById('kpi-total-pallets');
+    
+    if (elKpiMus) elKpiMus.innerText = dados.length;
+    if (elKpiPallets) elKpiPallets.innerText = new Set(dados.map(i => i.palletID)).size;
 }
 
 function renderizarTabela(dados) {
@@ -1084,15 +1062,16 @@ function renderizarTabela(dados) {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    dados.forEach(item => {
+    // Inverte os dados para mostrar o mais recente no topo
+    [...dados].reverse().forEach(item => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="font-mono">${item.mu || '-'}</td>
-            <td><span class="badge">${item.palletID || '-'}</span></td>
+            <td><span class="badge" style="background:#0284c7; padding:4px 8px; border-radius:4px;">${item.palletID || '-'}</span></td>
             <td>${item.dataDespacho || '-'}</td>
             <td>${item.usuario || 'Sistema'}</td>
-            <td style="text-align:center;">${item.acoesFeitas || '0'}</td>
-            <td>${item.tempoNoBuffer || '0m'}</td>
+            <td style="text-align:center;">${item.acoesFeitas || '1'}</td>
+            <td>${item.tempoNoBuffer || 'N/A'}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -1100,7 +1079,7 @@ function renderizarTabela(dados) {
 
 function simularDadosDeTeste() {
     return [
-        { dataDespacho: "14/08/2026 08:30:00", palletID: "PL-01", mu: "MU-TT-RC-20A-123", acoesFeitas: 4, tempoNoBuffer: "42m", usuario: "Maycon Sato" }
+        { dataDespacho: new Date().toLocaleString('pt-BR'), palletID: "PL-01", mu: "MU-TT-RC-20A-123", acoesFeitas: 4, tempoNoBuffer: "42m", usuario: "Maycon Sato" }
     ];
 }
 
@@ -1110,29 +1089,133 @@ function carregarDadosDashboard() {
     let pVermelha = 0, pAmarela = 0, pCinza = 0, pVerde = 0;
 
     layout.forEach(item => {
-        if (item.text && item.text.startsWith('P')) {
+        // Correção: Agora conta corretamente pelas classes e não apenas textos que começam com 'P'
+        if (item.className && item.className.includes('pallet')) {
             if (item.parentId === 'red-stack') pVermelha++;
             else if (item.parentId === 'yellow-stack') pAmarela++;
             else if (item.parentId === 'green-stack') pVerde++;
-            else if (item.parentId.startsWith('R-')) pCinza++;
+            else if (item.parentId && item.parentId.startsWith('R-')) pCinza++;
         }
     });
 
-    atualizarBarraKPI('kpi-ocupacao-pendentes', Math.round((pVermelha/10)*100), pVermelha, 10);
-    atualizarBarraKPI('kpi-ocupacao-triagem', Math.round((pAmarela/6)*100), pAmarela, 6);
-    atualizarBarraKPI('kpi-ocupacao-ruas', Math.round((pCinza/36)*100), pCinza, 36);
-    atualizarBarraKPI('kpi-ocupacao-expedicao', Math.round((pVerde/12)*100), pVerde, 12);
+    const maxCinza = 30; // 5 ruas * 6 paletes = 30
+    
+    atualizarBarraKPI('kpi-ocupacao-pendentes', Math.min(100, Math.round((pVermelha/MAX_RED_PALLETS)*100)), pVermelha, MAX_RED_PALLETS);
+    atualizarBarraKPI('kpi-ocupacao-triagem', Math.min(100, Math.round((pAmarela/MAX_YELLOW_PALLETS)*100)), pAmarela, MAX_YELLOW_PALLETS);
+    atualizarBarraKPI('kpi-ocupacao-ruas', Math.min(100, Math.round((pCinza/maxCinza)*100)), pCinza, maxCinza);
+    atualizarBarraKPI('kpi-ocupacao-expedicao', Math.min(100, Math.round((pVerde/MAX_GREEN_PALLETS)*100)), pVerde, MAX_GREEN_PALLETS);
 }
 
 function atualizarBarraKPI(idBase, perc, atual, max) {
     const elPerc = document.getElementById(`${idBase}-perc`);
     const elBar = document.getElementById(`${idBase}-bar`);
-    if (elPerc) elPerc.innerText = `${perc}%`;
+    if (elPerc) elPerc.innerText = `${perc}% (${atual}/${max})`;
     if (elBar) elBar.style.width = `${perc}%`;
 }
 
+
 // ==================================================================
-// 9. GESTÃO DE MUs, HISTÓRICO E ERROS
+// 13. SISTEMA DE CONSULTA E TRATATIVAS (Integrado)
+// ==================================================================
+
+function realizarConsulta() {
+    const input = document.getElementById('search-input').value.trim().toUpperCase();
+    if (!input) {
+        exibirToast('warning', 'Pesquisa vazia', 'Digite um ID de Palete ou código de MU.');
+        return;
+    }
+
+    let idPalvoEncontrado = null; 
+    let nomeExibicao = "";        
+    let listaMUs = [];
+    let localizacaoPalete = "Desconhecido";
+
+    const bufferLayout = JSON.parse(localStorage.getItem('buffer_layout')) || {};
+
+    if (input.startsWith('PL') || input.startsWith('P')) {
+        const encontradoNoLayout = bufferLayout.find(p => p.text.toUpperCase() === input);
+        if (encontradoNoLayout) {
+            idPalvoEncontrado = encontradoNoLayout.id;
+            nomeExibicao = encontradoNoLayout.text;
+            listaMUs = palletMUs[idPalvoEncontrado] || [];
+            localizacaoPalete = LANE_CODES[encontradoNoLayout.parentId] || encontradoNoLayout.parentId;
+        }
+    } else if (input.startsWith('MU')) {
+        for (const [idInterno, mus] of Object.entries(palletMUs)) {
+            if (mus.includes(input)) {
+                idPalvoEncontrado = idInterno;
+                listaMUs = mus;
+                const layoutItem = bufferLayout.find(p => p.id === idInterno);
+                if (layoutItem) {
+                    nomeExibicao = layoutItem.text;
+                    localizacaoPalete = LANE_CODES[layoutItem.parentId] || layoutItem.parentId;
+                }
+                break;
+            }
+        }
+    } else {
+        exibirToast('error', 'Formato Inválido', "Pesquise iniciando com 'PL' ou 'MU'.");
+        return;
+    }
+
+    if (!idPalvoEncontrado && listaMUs.length === 0) {
+        exibirToast('error', 'Não encontrado', `Nenhum registro para: ${input}`);
+        return;
+    }
+
+    renderizarTabelaPalete(idPalvoEncontrado, nomeExibicao, localizacaoPalete, listaMUs, input);
+}
+
+function renderizarTabelaPalete(idInterno, idPalete, localizacao, listaMUs, termoPesquisado) {
+    const headerTitle = document.querySelector('.card-header-flex h2');
+    const badgeCapacity = document.querySelector('.badge-capacity');
+    const tbody = document.querySelector('.data-table tbody');
+    
+    if (headerTitle) headerTitle.innerHTML = `📦 Palete: <span class="highlight-id">${idPalete}</span> <small style="display:block; font-size:0.8rem; color:#94a3b8; margin-top:2px;">📍 ${localizacao}</small>`;
+    if (badgeCapacity) badgeCapacity.innerText = `MUs Cadastradas: ${listaMUs.length}/30`;
+
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (listaMUs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #94a3b8;">Palete vazio.</td></tr>`;
+        document.querySelectorAll('.action-buttons .btn-action').forEach(btn => btn.setAttribute('disabled', 'true'));
+        return;
+    }
+
+    listaMUs.forEach(mu => {
+        const isSelected = mu === termoPesquisado ? 'selected-row' : '';
+        const tr = document.createElement('tr');
+        if (isSelected) tr.classList.add('selected-row');
+
+        tr.innerHTML = `
+            <td><strong>${mu}</strong></td>
+            <td><span class="tag tag-liberado">Liberado</span></td>
+            <td>${new Date().toLocaleDateString('pt-BR')}</td>
+            <td>OPERADOR_WMS</td>
+            <td><button class="btn-table" onclick="selecionarMU('${mu}', '${idInterno}', '${idPalete}', '${localizacao}')">Selecionar</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    const muParaSelecionar = listaMUs.includes(termoPesquisado) ? termoPesquisado : listaMUs[0];
+    selecionarMU(muParaSelecionar, idInterno, idPalete, localizacao);
+}
+
+function selecionarMU(mu, idInterno, idPalete, localizacao) {
+    muSelecionadaGlobal = mu;
+    paleteAtualGlobal = { idInterno, idPalete, localizacao };
+
+    const elCode = document.getElementById('detail-mu-code');
+    const elLoc = document.getElementById('detail-mu-location');
+    if (elCode) elCode.innerText = mu;
+    if (elLoc) elLoc.innerText = `Localização: ${localizacao} (Palete: ${idPalete})`;
+    
+    document.querySelectorAll('.action-buttons .btn-action').forEach(btn => btn.removeAttribute('disabled'));
+}
+
+// ==================================================================
+// 14. GESTÃO AVANÇADA DE MUs E HISTÓRICO INTERNO
 // ==================================================================
 function obterUsuarioAtual() {
     return localStorage.getItem('usuario_ativo_wms') || 'OPERADOR_WMS';
@@ -1141,12 +1224,16 @@ function obterUsuarioAtual() {
 function getDetalhesMUs() {
     return JSON.parse(localStorage.getItem('buffer_mu_detalhes')) || {};
 }
-function salvarDetalhesMUs(d) { localStorage.setItem('buffer_mu_detalhes', JSON.stringify(d)); }
+function salvarDetalhesMUs(d) { 
+    localStorage.setItem('buffer_mu_detalhes', JSON.stringify(d)); 
+}
 
 function getHistoricoMUs() {
     return JSON.parse(localStorage.getItem('buffer_mu_historico')) || {};
 }
-function salvarHistoricoMUs(h) { localStorage.setItem('buffer_mu_historico', JSON.stringify(h)); }
+function salvarHistoricoMUs(h) { 
+    localStorage.setItem('buffer_mu_historico', JSON.stringify(h)); 
+}
 
 function registrarHistoricoMU(muCode, eventoTexto) {
     if (!muCode) return;
@@ -1161,65 +1248,99 @@ function registrarHistoricoMU(muCode, eventoTexto) {
     salvarHistoricoMUs(historicos);
 }
 
-function realizarConsulta() {
-    const input = document.getElementById('search-input').value.trim().toUpperCase();
-    if (!input) return exibirToast('info', 'Informação', "Digite um ID de Palete ou MU.");
-
-    const bufferLayout = JSON.parse(localStorage.getItem('buffer_layout')) || [];
-    let idPalvo = null, nomeExibicao = "", listaMUs = [];
-
-    if (input.startsWith('PL') || input.startsWith('P')) {
-        const found = bufferLayout.find(p => p.text.toUpperCase() === input);
-        if (found) {
-            idPalvo = found.id;
-            nomeExibicao = found.text;
-            listaMUs = palletMUs[idPalvo] || [];
-        }
-    } else if (input.startsWith('MU')) {
-        for (const [idInt, mus] of Object.entries(palletMUs)) {
-            if (mus.includes(input)) {
-                idPalvo = idInt;
-                listaMUs = mus;
-                const found = bufferLayout.find(p => p.id === idInt);
-                nomeExibicao = found ? found.text : idInt;
-                break;
-            }
-        }
-    }
-
-    if (!idPalvo) {
-        exibirToast('info', 'Informação', `Nenhum registro encontrado para: ${input}`);
-        return;
-    }
-
-    muSelecionadaGlobal = listaMUs[0] || null;
-    paleteAtualGlobal = { idInterno: idPalvo, idPalete: nomeExibicao };
-    exibirToast('info', 'Informação', `Palete ${nomeExibicao} encontrado com ${listaMUs.length} MUs.`);
-}
+// ==================================================================
+// 15. FUNÇÕES DE TRATATIVAS ATUALIZADAS (AGORA COM HISTÓRICO)
+// (Substitua as funções correspondentes da Parte 5 por estas abaixo)
+// ==================================================================
 
 function removerMUAtual() {
-    if (!muSelecionadaGlobal || !paleteAtualGlobal) return exibirToast('info', 'Informação', "Nenhuma MU selecionada.");
-    if (confirm(`Remover MU ${muSelecionadaGlobal}?`)) {
-        palletMUs[paleteAtualGlobal.idInterno] = palletMUs[paleteAtualGlobal.idInterno].filter(m => m !== muSelecionadaGlobal);
+    if (!muSelecionadaGlobal || !paleteAtualGlobal) return;
+
+    if (confirm(`🗑️ Deseja realmente remover a MU "${muSelecionadaGlobal}" do palete ${paleteAtualGlobal.idPalete}?`)) {
+        let musDoPalete = palletMUs[paleteAtualGlobal.idInterno] || [];
+        palletMUs[paleteAtualGlobal.idInterno] = musDoPalete.filter(m => m !== muSelecionadaGlobal);
+        
+        // NOVO: Registra no histórico oculto da MU
+        registrarHistoricoMU(muSelecionadaGlobal, `Removida manualmente do palete ${paleteAtualGlobal.idPalete}`);
+
         salvarEstadoGeral();
-        exibirToast('info', 'Informação', "MU removida com sucesso!");
+        exibirToast('success', 'Removida', `MU removida com sucesso!`);
+        verificarPaleteVazio(paleteAtualGlobal.idInterno, paleteAtualGlobal.idPalete);
+        
+        const input = document.getElementById('search-input');
+        if(input) { input.value = paleteAtualGlobal.idPalete; realizarConsulta(); }
     }
 }
 
 function moverMUAtual() {
-    exibirToast('info', 'Informação', "Função de movimentação de MU ativa.");
+    if (!muSelecionadaGlobal || !paleteAtualGlobal) return;
+
+    const destinoInput = prompt(`🔄 Digite o ID do palete de destino (Ex: PL-02):`);
+    if (!destinoInput || destinoInput.trim() === "") return;
+
+    const destinoFormatado = destinoInput.trim().toUpperCase();
+    if (destinoFormatado === paleteAtualGlobal.idPalete.toUpperCase()) {
+        exibirToast('warning', 'Aviso', 'A MU já está neste palete!');
+        return;
+    }
+
+    const bufferLayout = JSON.parse(localStorage.getItem('buffer_layout')) || [];
+    const destinoLayout = bufferLayout.find(p => p.text.toUpperCase() === destinoFormatado);
+
+    if (!destinoLayout) {
+        exibirToast('error', 'Erro', `Palete "${destinoFormatado}" não encontrado!`);
+        return;
+    }
+
+    const idInternoDestino = destinoLayout.id;
+    if ((palletMUs[idInternoDestino] || []).length >= 30) {
+        exibirToast('error', 'Cheio', 'O palete de destino já possui 30 MUs!');
+        return;
+    }
+
+    palletMUs[paleteAtualGlobal.idInterno] = palletMUs[paleteAtualGlobal.idInterno].filter(m => m !== muSelecionadaGlobal);
+    if (!palletMUs[idInternoDestino]) palletMUs[idInternoDestino] = [];
+    palletMUs[idInternoDestino].push(muSelecionadaGlobal);
+
+    // NOVO: Registra no histórico oculto da MU
+    registrarHistoricoMU(muSelecionadaGlobal, `Movida do palete ${paleteAtualGlobal.idPalete} para o palete ${destinoFormatado}`);
+
+    salvarEstadoGeral();
+    exibirToast('success', 'Movida', `MU movida para ${destinoFormatado}!`);
+    verificarPaleteVazio(paleteAtualGlobal.idInterno, paleteAtualGlobal.idPalete);
+    
+    const input = document.getElementById('search-input');
+    if(input) { input.value = destinoFormatado; realizarConsulta(); }
 }
 
 function alterarStatusMUAtual() {
-    exibirToast('info', 'Informação', "Alteração de status da MU ativa.");
+    if (!muSelecionadaGlobal) {
+        exibirToast('error', 'Erro', 'Nenhuma MU selecionada.');
+        return;
+    }
+    
+    // Simulação de alteração de status
+    registrarHistoricoMU(muSelecionadaGlobal, `Status operacional alterado pelo usuário`);
+    exibirToast('success', 'Status Atualizado', `O status da MU ${muSelecionadaGlobal} foi alterado no sistema.`);
 }
 
 function abrirModalSelecaoErros() {
-    exibirToast('info', 'Informação', "Modal de seleção de erros.");
+    if (!muSelecionadaGlobal) {
+        exibirToast('error', 'Erro', 'Nenhuma MU selecionada para atrelar erro.');
+        return;
+    }
+
+    const erroSelecionado = prompt(`Selecione ou digite o erro a ser atrelado à MU:\n(Ex: ${LISTA_ERROS_PADRAO.slice(0, 5).join(', ')}...)`);
+    
+    if (erroSelecionado && erroSelecionado.trim() !== '') {
+        // Grava no histórico o erro
+        registrarHistoricoMU(muSelecionadaGlobal, `Erro Reportado: ${erroSelecionado.trim()}`);
+        exibirToast('warning', 'Erro Atrelado', `Erro "${erroSelecionado}" vinculado à MU ${muSelecionadaGlobal}.`);
+    }
 }
 
 // ==================================================================
-// FUNÇÕES DE INTEGRAÇÃO: MAPA → DASHBOARD → CONSULTA → HISTÓRICO
+// 16. DASHBOARD AVANÇADO E INTEGRAÇÃO DE KPIs
 // ==================================================================
 
 function obterStatusZonas() {
@@ -1236,11 +1357,13 @@ function obterStatusZonas() {
         totalMUs: Object.values(palletMUs).reduce((sum, mus) => sum + mus.length, 0)
     };
 
-    streetsContainer.forEach(lane => {
-        const pallets = lane.querySelectorAll('.pallet').length;
-        stats.ruas.ocupados += pallets;
-        stats.ruas.capacidade += 6;
-    });
+    if (streetsContainer) {
+        streetsContainer.forEach(lane => {
+            const pallets = lane.querySelectorAll('.pallet').length;
+            stats.ruas.ocupados += pallets;
+            stats.ruas.capacidade += 6;
+        });
+    }
 
     return stats;
 }
@@ -1248,110 +1371,65 @@ function obterStatusZonas() {
 function atualizarDashboard() {
     const stats = obterStatusZonas();
     
-    // KPI: Total de MUs
+    // KPI: Total de MUs (Baseado nas ocupadas e projetadas)
     const totalMUsEl = document.getElementById('kpi-total-mus');
-    if (totalMUsEl) {
-        const musPendentes = stats.vermelha.ocupados * 30;
+    if (totalMUsEl && !document.querySelector('.history-table')) { // Se não estiver na tela de histórico
+        const musPendentes = stats.vermelha.ocupados * 30; // Estimativa conservadora de paletes não bipados
         const totalMUs = stats.totalMUs + musPendentes;
-        totalMUsEl.innerHTML = `${totalMUs} <span class="kpi-unit">MUs</span>`;
+        totalMUsEl.innerHTML = `${totalMUs} <span class="kpi-unit" style="font-size:0.5em; opacity:0.7;">MUs</span>`;
     }
 
-    // KPI: Ocupação Vermelha
-    const percVermelha = (stats.vermelha.ocupados / stats.vermelha.capacidade) * 100;
-    if (document.getElementById('kpi-ocupacao-pendentes-perc')) {
-        document.getElementById('kpi-ocupacao-pendentes-perc').innerText = Math.round(percVermelha) + '%';
-        document.getElementById('kpi-ocupacao-pendentes-bar').style.width = percVermelha + '%';
-        document.getElementById('kpi-ocupacao-pendentes-text').innerText = `${stats.vermelha.ocupados} de ${stats.vermelha.capacidade} posições ocupadas`;
-    }
+    // Função interna para preencher as barras
+    const renderBar = (id, ocupados, capacidade) => {
+        if (!document.getElementById(`${id}-perc`)) return;
+        const perc = capacidade > 0 ? (ocupados / capacidade) * 100 : 0;
+        const percRound = Math.min(100, Math.round(perc));
+        
+        document.getElementById(`${id}-perc`).innerText = percRound + '%';
+        document.getElementById(`${id}-bar`).style.width = percRound + '%';
+        
+        const elText = document.getElementById(`${id}-text`);
+        if (elText) elText.innerText = `${ocupados} de ${capacidade} posições ocupadas`;
+    };
 
-    // KPI: Ocupação Amarela
-    const percAmarela = (stats.amarela.ocupados / stats.amarela.capacidade) * 100;
-    if (document.getElementById('kpi-ocupacao-triagem-perc')) {
-        document.getElementById('kpi-ocupacao-triagem-perc').innerText = Math.round(percAmarela) + '%';
-        document.getElementById('kpi-ocupacao-triagem-bar').style.width = percAmarela + '%';
-        document.getElementById('kpi-ocupacao-triagem-text').innerText = `${stats.amarela.ocupados} de ${stats.amarela.capacidade} posições ocupadas`;
-    }
-
-    // KPI: Ocupação Ruas
-    const percRuas = stats.ruas.capacidade > 0 ? (stats.ruas.ocupados / stats.ruas.capacidade) * 100 : 0;
-    if (document.getElementById('kpi-ocupacao-ruas-perc')) {
-        document.getElementById('kpi-ocupacao-ruas-perc').innerText = Math.round(percRuas) + '%';
-        document.getElementById('kpi-ocupacao-ruas-bar').style.width = percRuas + '%';
-        document.getElementById('kpi-ocupacao-ruas-text').innerText = `${stats.ruas.ocupados} de ${stats.ruas.capacidade} posições ocupadas`;
-    }
-
-    // KPI: Ocupação Verde
-    const percVerde = (stats.verde.ocupados / stats.verde.capacidade) * 100;
-    if (document.getElementById('kpi-ocupacao-expedicao-perc')) {
-        document.getElementById('kpi-ocupacao-expedicao-perc').innerText = Math.round(percVerde) + '%';
-        document.getElementById('kpi-ocupacao-expedicao-bar').style.width = percVerde + '%';
-        document.getElementById('kpi-ocupacao-expedicao-text').innerText = `${stats.verde.ocupados} de ${stats.verde.capacidade} posições ocupadas`;
-    }
+    renderBar('kpi-ocupacao-pendentes', stats.vermelha.ocupados, stats.vermelha.capacidade);
+    renderBar('kpi-ocupacao-triagem', stats.amarela.ocupados, stats.amarela.capacidade);
+    renderBar('kpi-ocupacao-ruas', stats.ruas.ocupados, stats.ruas.capacidade);
+    renderBar('kpi-ocupacao-expedicao', stats.verde.ocupados, stats.verde.capacidade);
 }
+
+// ==================================================================
+// 17. HISTÓRICO COM MÉDIAS E DETALHAMENTO DE MU
+// ==================================================================
 
 function carregarHistoricoComMedias() {
     const historicoGeral = JSON.parse(localStorage.getItem('buffer_historico')) || [];
     const historicoPorMU = getHistoricoMUs();
     
-    // Calcular estatísticas
     const totalMUs = historicoGeral.length;
     const totalPallets = new Set(historicoGeral.map(h => h.palletID)).size;
     const acoesPorMU = Object.values(historicoPorMU).reduce((sum, eventos) => sum + eventos.length, 0);
     const mediaAcoes = totalMUs > 0 ? (acoesPorMU / totalMUs).toFixed(2) : 0;
 
-    // Atualizar KPIs
-    if (document.getElementById('kpi-total-mus')) {
-        document.getElementById('kpi-total-mus').innerText = totalMUs;
-    }
-    if (document.getElementById('kpi-total-pallets')) {
-        document.getElementById('kpi-total-pallets').innerText = totalPallets;
-    }
-    if (document.getElementById('kpi-media-acoes')) {
-        document.getElementById('kpi-media-acoes').innerText = mediaAcoes;
-    }
+    if (document.getElementById('kpi-total-mus')) document.getElementById('kpi-total-mus').innerText = totalMUs;
+    if (document.getElementById('kpi-total-pallets')) document.getElementById('kpi-total-pallets').innerText = totalPallets;
+    if (document.getElementById('kpi-media-acoes')) document.getElementById('kpi-media-acoes').innerText = mediaAcoes;
 
-    // Popular tabela de histórico
     const tbody = document.querySelector('.history-table tbody');
     if (tbody) {
         tbody.innerHTML = '';
         historicoGeral.slice().reverse().forEach(registro => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td>${registro.mu}</td>
-                <td>${registro.palletID || '---'}</td>
+                <td><strong class="text-highlight">${registro.mu}</strong></td>
+                <td><span class="badge" style="background:#0284c7; padding:4px 8px; border-radius:4px;">${registro.palletID || '---'}</span></td>
                 <td>${registro.dataDespacho}</td>
                 <td>${registro.usuario || 'Sistema'}</td>
-                <td>${registro.acoesFeitas || 0}</td>
+                <td style="text-align:center;">${registro.acoesFeitas || 0}</td>
             `;
             tbody.appendChild(tr);
         });
     }
-}
-
-function preencherConsultaMU(paletePL) {
-    const tbody = document.querySelector('.consulta-card-palete tbody');
-    if (!tbody) return;
-
-    const redStack = document.getElementById('red-stack');
-    const palete = Array.from(redStack.children).find(p => p.innerText === paletePL);
-    
-    if (!palete) return;
-
-    const musList = palletMUs[palete.id] || [];
-    tbody.innerHTML = '';
-    
-    musList.forEach((mu, idx) => {
-        const historicoPorMU = getHistoricoMUs()[mu] || [];
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><strong>${mu}</strong></td>
-            <td><span class="badge badge-active">Ativa</span></td>
-            <td>${historicoPorMU.length > 0 ? historicoPorMU[historicoPorMU.length - 1].timestamp : '---'}</td>
-            <td>${historicoPorMU.length > 0 ? historicoPorMU[historicoPorMU.length - 1].usuario : '---'}</td>
-            <td><button onclick="exibirDetalheMU('${mu}')">📊 Ver</button></td>
-        `;
-        tbody.appendChild(tr);
-    });
 }
 
 function exibirDetalheMU(muCode) {
@@ -1363,35 +1441,52 @@ function exibirDetalheMU(muCode) {
     
     if (detailTimeline) {
         detailTimeline.innerHTML = '';
+        
+        if (historico.length === 0) {
+            detailTimeline.innerHTML = '<p style="color:#94a3b8; text-align:center; padding:10px;">Sem eventos registrados ainda.</p>';
+            return;
+        }
+
         historico.forEach(evento => {
             const item = document.createElement('div');
             item.className = 'timeline-item';
             item.innerHTML = `
-                <div class="timeline-time">${evento.timestamp}</div>
-                <div class="timeline-content">
-                    <strong>${evento.usuario}</strong>
-                    <p>${evento.evento}</p>
-                </div>
+                <div class="timeline-date">${evento.timestamp.split(' ')[1]} - ${evento.timestamp.split(' ')[0]}</div>
+                <div class="timeline-content">${evento.evento}</div>
+                <div class="timeline-user">👤 ${evento.usuario}</div>
             `;
             detailTimeline.appendChild(item);
         });
     }
 }
 
-// Inicializar ao carregar página
+// ==================================================================
+// 18. LOADS GLOBAIS E EXPORTAÇÃO (WINDOW)
+// ==================================================================
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Dashboard
-    if (document.getElementById('kpi-total-mus') && document.querySelectorAll('.kpi-grid').length > 1) {
+    // Inicia Timer do Dashboard se estiver na tela de Dash
+    if (document.getElementById('kpi-ocupacao-pendentes-perc')) {
         atualizarDashboard();
-        setInterval(atualizarDashboard, 5000);
+        setInterval(atualizarDashboard, 5000); // Atualiza a cada 5s
     }
-    // Histórico
+    
+    // Carrega Histórico detalhado se estiver na tela de histórico
     if (document.querySelector('.history-table')) {
         carregarHistoricoComMedias();
     }
 });
 
-// Exportações Globais necessárias para HTML
+// EXPORTAÇÕES OBRIGATÓRIAS PARA HTML
+window.switchAuthTab = switchAuthTab;
+window.realizarCadastro = realizarCadastro;
+window.realizarLogin = realizarLogin;
+window.abrirConfiguracoes = abrirConfiguracoes;
+window.fecharConfiguracoes = fecharConfiguracoes;
+window.mudarTema = mudarTema;
+window.alterarSenhaOperador = alterarSenhaOperador;
+window.realizarLogout = realizarLogout;
+
 window.selectPalletElement = selectPalletElement;
 window.triggerAction = triggerAction;
 window.allowDrop = allowDrop;
@@ -1402,6 +1497,7 @@ window.dropPalletRed = dropPalletRed;
 window.dropPalletYellow = dropPalletYellow;
 window.dropPallet = dropPallet;
 window.dropPalletGreen = dropPalletGreen;
+
 window.fecharModalPalete = fecharModalPalete;
 window.realizarConsulta = realizarConsulta;
 window.removerMUAtual = removerMUAtual;
@@ -1411,5 +1507,4 @@ window.abrirModalSelecaoErros = abrirModalSelecaoErros;
 window.obterStatusZonas = obterStatusZonas;
 window.atualizarDashboard = atualizarDashboard;
 window.carregarHistoricoComMedias = carregarHistoricoComMedias;
-window.preencherConsultaMU = preencherConsultaMU;
 window.exibirDetalheMU = exibirDetalheMU;
