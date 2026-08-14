@@ -1,5 +1,182 @@
 
+// ==================================================================
+// CONFIGURAÇÕES E AUTENTICAÇÃO WMS
+// ==================================================================
+const GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyWvQ8Anvus1la6b58rb0PDCB5miiiYo0gVUevofddG8Sm1owo20hx1cZXm-9AX8ivVNA/exec";
 
+// Ao carregar a página, verifica se já existe uma sessão ativa
+document.addEventListener('DOMContentLoaded', () => {
+    verificarSessaoAtiva();
+});
+
+/**
+ * Alterna visibilidade entre as abas do Modal de Auth
+ */
+function switchAuthTab(tabName) {
+    // Esconde todos os conteúdos de abas
+    document.querySelectorAll('.auth-tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+
+    // Desativa estilo de todos os botões
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // Ativa a aba e o botão selecionado
+    const selectedTab = document.getElementById(`tab-${tabName}`);
+    if (selectedTab) selectedTab.classList.add('active');
+
+    const activeBtn = Array.from(document.querySelectorAll('.tab-btn'))
+        .find(btn => btn.getAttribute('onclick').includes(tabName));
+    if (activeBtn) activeBtn.classList.add('active');
+}
+
+/**
+ * REALIZAR LOGIN (Consulta o Google Sheets)
+ */
+async function realizarLogin(event) {
+    event.preventDefault();
+
+    const usernameInput = document.getElementById('login-username').value.trim().toLowerCase();
+    const passwordInput = document.getElementById('login-password').value;
+    const btnSubmit = event.target.querySelector('button[type="submit"]');
+
+    try {
+        btnSubmit.disabled = true;
+        btnSubmit.innerText = "Autenticando...";
+
+        // 1. Busca a lista de usuários cadastrados no Apps Script
+        const response = await fetch(`${GOOGLE_SHEETS_URL}?action=get_usuarios`);
+        const usuarios = await response.json();
+
+        const listaUsuarios = Array.isArray(usuarios) ? usuarios : [];
+
+        // 2. Valida o usuário e a senha
+        const usuarioEncontrado = listaUsuarios.find(
+            user => user.username.toLowerCase() === usernameInput && user.password === passwordInput
+        );
+
+        if (usuarioEncontrado) {
+            // Salva na sessão local (sessionStorage limpa ao fechar a aba)
+            sessionStorage.setItem('usuarioAtivo', JSON.stringify({
+                nome: usuarioEncontrado.fullname,
+                username: usuarioEncontrado.username
+            }));
+
+            desbloquearTelaSistema(usuarioEncontrado.fullname);
+        } else {
+            alert("Usuário ou senha incorretos.");
+        }
+
+    } catch (erro) {
+        console.error("Erro ao realizar login:", erro);
+        alert("Falha ao comunicar com o servidor de autenticação.");
+    } finally {
+        btnSubmit.disabled = false;
+        btnSubmit.innerText = "Acessar Sistema";
+    }
+}
+
+/**
+ * REALIZAR CADASTRO DE OPERADOR (Grava no Google Sheets)
+ */
+async function realizarCadastro(event) {
+    event.preventDefault();
+
+    const fullname = document.getElementById('reg-fullname').value.trim();
+    const username = document.getElementById('reg-username').value.trim().toLowerCase();
+    const password = document.getElementById('reg-password').value;
+    const btnSubmit = event.target.querySelector('button[type="submit"]');
+
+    try {
+        btnSubmit.disabled = true;
+        btnSubmit.innerText = "Cadastrando...";
+
+        // 1. Puxa os usuários atuais para não sobrescrever
+        const response = await fetch(`${GOOGLE_SHEETS_URL}?action=get_usuarios`);
+        const usuariosAtuais = await response.json();
+        const listaUsuarios = Array.isArray(usuariosAtuais) ? usuariosAtuais : [];
+
+        // 2. Verifica se a matrícula/usuário já existe
+        const usuarioExiste = listaUsuarios.some(user => user.username.toLowerCase() === username);
+        if (usuarioExiste) {
+            alert("Esta matrícula/usuário já está cadastrada no sistema!");
+            return;
+        }
+
+        // 3. Adiciona o novo usuário na lista
+        listaUsuarios.push({
+            fullname: fullname,
+            username: username,
+            password: password,
+            dataCadastro: new Date().toLocaleString('pt-BR')
+        });
+
+        // 4. Salva a lista atualizada via POST no Apps Script
+        const payload = new URLSearchParams({
+            action: 'save_usuarios',
+            data: JSON.stringify(listaUsuarios)
+        });
+
+        const saveResponse = await fetch(GOOGLE_SHEETS_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: payload.toString()
+        });
+
+        const resultado = await saveResponse.json();
+
+        if (resultado.status === 'success') {
+            alert("Operador cadastrado com sucesso! Faça login para continuar.");
+            event.target.reset(); // Limpa o formulário de cadastro
+            switchAuthTab('login'); // Retorna para a aba de login
+        } else {
+            alert("Erro ao salvar cadastro: " + resultado.message);
+        }
+
+    } catch (erro) {
+        console.error("Erro no cadastro:", erro);
+        alert("Falha ao cadastrar operador no servidor.");
+    } finally {
+        btnSubmit.disabled = false;
+        btnSubmit.innerText = "Cadastrar Operador";
+    }
+}
+
+/**
+ * VERIFICA SE O USUÁRIO JÁ ESTÁ LOGADO
+ */
+function verificarSessaoAtiva() {
+    const usuarioSalvo = sessionStorage.getItem('usuarioAtivo');
+    if (usuarioSalvo) {
+        const user = JSON.parse(usuarioSalvo);
+        desbloquearTelaSistema(user.nome);
+    }
+}
+
+/**
+ * DESBLOQUEIA A TELA E EXIBE NOME DO OPERADOR
+ */
+function desbloquearTelaSistema(nomeOperador) {
+    const authContainer = document.getElementById('auth-system-container');
+    if (authContainer) {
+        authContainer.style.display = 'none'; // Esconde o modal de login
+    }
+
+    const statusUserEl = document.getElementById('auth-status-user');
+    if (statusUserEl) {
+        statusUserEl.innerHTML = `👤 <strong>Usuário Ativo:</strong> ${nomeOperador}`;
+    }
+}
+
+/**
+ * LOGOUT DO SISTEMA
+ */
+function realizarLogout() {
+    sessionStorage.removeItem('usuarioAtivo');
+    window.location.reload();
+}
 // ------------------------------------------------------------------
 // 1. INICIALIZAÇÃO E TRAVA DE TEXTO DE INTERFACE
 // ------------------------------------------------------------------

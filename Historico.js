@@ -1,24 +1,25 @@
-// URL do seu Google Apps Script (Web App) configurado para GET
-// Você precisará de um script lá no Google Sheets que retorne os dados em formato JSON.
-const GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbxPsyrJdzUQJFKh_3xnA-PkKINZkZCCeCnJN9KCd9IXca4bWU2wtXS101DQbf9qLi3A_g/exec";
+const GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyWvQ8Anvus1la6b58rb0PDCB5miiiYo0gVUevofddG8Sm1owo20hx1cZXm-9AX8ivVNA/exec";
 
-// Variável global para armazenar os dados e permitir filtros depois
 let dadosHistorico = [];
 
 document.addEventListener('DOMContentLoaded', () => {
     carregarDadosDoSheets();
 });
 
+/**
+ * BUXAR DADOS (GET)
+ */
 async function carregarDadosDoSheets() {
     try {
-        // Se ainda não tiver a URL, usamos dados falsos (Mock) apenas para você ver funcionando o visual
-        if (GOOGLE_SHEETS_URL === "https://script.google.com/macros/s/AKfycbxPsyrJdzUQJFKh_3xnA-PkKINZkZCCeCnJN9KCd9IXca4bWU2wtXS101DQbf9qLi3A_g/exec") {
-            console.warn("URL do Web App não configurada. Carregando dados de teste...");
-            dadosHistorico = simularDadosDeTeste();
+        // Envia o parâmetro de ação para a rota correspondente no Apps Script
+        const response = await fetch(`${GOOGLE_SHEETS_URL}?action=get_historico`);
+        const data = await response.json();
+
+        if (Array.isArray(data)) {
+            dadosHistorico = data;
         } else {
-            // Faz a requisição na planilha
-            const resposta = await fetch(GOOGLE_SHEETS_URL);
-            dadosHistorico = await resposta.json(); 
+            console.error("Erro retornado pelo Script:", data);
+            dadosHistorico = [];
         }
 
         calcularKPIs(dadosHistorico);
@@ -26,28 +27,65 @@ async function carregarDadosDoSheets() {
 
     } catch (erro) {
         console.error("Erro ao buscar dados do Sheets:", erro);
-        document.getElementById('history-table-body').innerHTML = `<tr><td colspan="6" style="text-align: center; color: red;">Erro ao carregar dados. Verifique sua conexão ou a URL do Apps Script.</td></tr>`;
+        document.getElementById('history-table-body').innerHTML = 
+            `<tr><td colspan="6" style="text-align: center; color: red;">Erro ao carregar dados do servidor.</td></tr>`;
+    }
+}
+
+/**
+ * GRAVAR DADOS (POST)
+ * @param {Array<Object>} registros Exemplo: [{mu: "MU123", palletID: "PL01", dataDespacho: "14/08/2026 10:00", usuario: "Nome"}]
+ */
+async function salvarHistoricoNoSheets(registros) {
+    try {
+        // O Apps Script espera dados no formato de formulário URL-encoded
+        const payload = new URLSearchParams({
+            action: 'save_historico',
+            data: JSON.stringify(registros)
+        });
+
+        const response = await fetch(GOOGLE_SHEETS_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: payload.toString()
+        });
+
+        const resultado = await response.json();
+        
+        if (resultado.status === 'success') {
+            // Recarrega os dados atualizados da planilha
+            await carregarDadosDoSheets();
+            return true;
+        } else {
+            console.error("Erro ao salvar:", resultado.message);
+            return false;
+        }
+    } catch (erro) {
+        console.error("Erro de rede ao salvar:", erro);
+        return false;
     }
 }
 
 function calcularKPIs(dados) {
-    if (!dados || dados.length === 0) return;
+    if (!dados || dados.length === 0) {
+        document.getElementById('kpi-total-mus').innerText = 0;
+        document.getElementById('kpi-total-pallets').innerText = 0;
+        document.getElementById('kpi-media-acoes').innerText = 0;
+        return;
+    }
 
-    // 1. Total de MU Liberadas (Cada linha é uma MU)
     const totalMUs = dados.length;
-
-    // 2. Total de Paletes (Contar quantos IDs de paletes únicos existem)
     const paletesUnicos = new Set(dados.map(item => item.palletID));
     const totalPallets = paletesUnicos.size;
 
-    // 3. Média de Ações (Soma de todas as ações dividida pelo total de MUs)
     let somaAcoes = 0;
     dados.forEach(item => {
         somaAcoes += Number(item.acoesFeitas) || 0;
     });
     const mediaAcoes = totalMUs > 0 ? (somaAcoes / totalMUs).toFixed(1) : 0;
 
-    // Atualiza os valores no HTML
     document.getElementById('kpi-total-mus').innerText = totalMUs;
     document.getElementById('kpi-total-pallets').innerText = totalPallets;
     document.getElementById('kpi-media-acoes').innerText = mediaAcoes;
@@ -55,16 +93,16 @@ function calcularKPIs(dados) {
 
 function renderizarTabela(dados) {
     const tbody = document.getElementById('history-table-body');
-    tbody.innerHTML = ''; // Limpa o "Carregando..."
+    tbody.innerHTML = '';
 
-    if (dados.length === 0) {
+    if (!dados || dados.length === 0) {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">Nenhum registro encontrado.</td></tr>`;
         return;
     }
 
     dados.forEach(item => {
-        // Pega as iniciais do operador (Ex: "Maycon Sato" -> "MS")
-        const nomePartes = (item.usuario || 'Desconhecido').split(' ');
+        const nomeUsuario = item.usuario || 'Desconhecido';
+        const nomePartes = nomeUsuario.trim().split(' ');
         const iniciais = nomePartes.length > 1 
             ? (nomePartes[0][0] + nomePartes[1][0]).toUpperCase() 
             : nomePartes[0][0].toUpperCase();
@@ -77,7 +115,7 @@ function renderizarTabela(dados) {
             <td>
                 <div class="user-cell">
                     <span class="avatar">${iniciais}</span>
-                    ${item.usuario || 'Sistema'}
+                    ${nomeUsuario}
                 </div>
             </td>
             <td style="text-align: center; font-weight: bold;">${item.acoesFeitas || '0'}</td>
@@ -85,17 +123,4 @@ function renderizarTabela(dados) {
         `;
         tbody.appendChild(tr);
     });
-}
-
-// =========================================================
-// FUNÇÃO TEMPORÁRIA: Só para você ver a tela funcionando 
-// enquanto não conecta o Google Apps Script real.
-// =========================================================
-function simularDadosDeTeste() {
-    return [
-        { dataDespacho: "13/08/2026 14:32:05", palletID: "PL-01", mu: "MU-TT-RC-20A-123", acoesFeitas: 4, tempoNoBuffer: "42m", usuario: "Maycon Sato" },
-        { dataDespacho: "13/08/2026 14:32:05", palletID: "PL-01", mu: "MU-TT-RC-20A-124", acoesFeitas: 2, tempoNoBuffer: "42m", usuario: "Maycon Sato" },
-        { dataDespacho: "13/08/2026 13:15:22", palletID: "PL-04", mu: "MU-TT-RC-18B-889", acoesFeitas: 7, tempoNoBuffer: "3h 10m", usuario: "Wilton" },
-        { dataDespacho: "13/08/2026 11:05:40", palletID: "PL-02", mu: "MU-TT-RC-15A-002", acoesFeitas: 3, tempoNoBuffer: "1h 05m", usuario: "Gesleane Morais" }
-    ];
 }
