@@ -1,376 +1,320 @@
-// ==================================================================
-// CONFIGURAÇÕES GLOBAIS (VARIÁVEIS) E ESTADO
-// ==================================================================
-// ⚠️ ATENÇÃO: Substitua pela URL gerada no seu Google Apps Script
-const GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyWvQ8Anvus1la6b58rb0PDCB5miiiYo0gVUevofddG8Sm1owo20hx1cZXm-9AX8ivVNA/exec";
 
+
+// ------------------------------------------------------------------
+// 1. INICIALIZAÇÃO E TRAVA DE TEXTO DE INTERFACE
+// ------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+    document.body.removeAttribute('contenteditable');
+
+    const protectedSelectors = 'h1, h2, h3, h4, h5, h6, span, p, label, .zone-header, .lane-title, .app-drawer h2, .main-navbar';
+    document.querySelectorAll(protectedSelectors).forEach(el => {
+        el.contentEditable = "false";
+    });
+
+    // CARREGA TUDO O QUE ESTAVA SALVO NO NAVEGADOR
+    carregarEstadoGeral(); 
+    updateRedCounter();
+});
+
+// ==================================================================
+// ESTADO DA APLICAÇÃO & CONFIGURAÇÕES
+// ==================================================================
 let selectedElement = null;
 let selectedName = '';
 let currentIdCounter = 1;
-let timerInterval = null;
-let dashInterval = null;
-let syncTimeout = null; // Controle anti-spam para o Google Sheets
 
 const MAX_RED_PALLETS = 10;
 const MAX_YELLOW_PALLETS = 6;
 const MAX_GREEN_PALLETS = 12;
 
-let palletMUs = {};
-const palletLocation = {};
+// Armazena as MUs cadastradas temporariamente por ID do elemento do palete
+const palletMUs = {}; 
 
-const LANE_CODES = {
-    'RUA A': 'R-A', 'RUA B': 'R-B', 'RUA C': 'R-C', 
-    'RUA D': 'R-D', 'RUA E': 'R-E'
-};
-
-const LISTA_ERROS_PADRAO = [
-    'Audit', 'Cubing', 'Montagem de Hu', 'Sor', 'P2M', 'Checkin',
-    'Usuário Travado', 'Transfer Volume', 'Viagem em Curso',
-    'Despacho em HU', 'Vincular em HU', 'Invoincing', 'Decating', 'Saldo em outro CAD'
-];
-
-let dadosHistorico = [];
-let muSelecionadaGlobal = null;
-let paleteAtualGlobal = null;
-
-// ==================================================================
-// COMUNICAÇÃO COM GOOGLE SHEETS (O NOVO BANCO DE DADOS)
-// ==================================================================
-
-// Função para BUSCAR dados (GET)
-async function fetchDatabase(action) {
-    try {
-        const response = await fetch(`${GOOGLE_SHEETS_URL}?action=${action}`);
-        return await response.json();
-    } catch (error) {
-        console.error(`Erro ao buscar [${action}] no Sheets:`, error);
-        return null;
-    }
-}
-
-// Função para SALVAR dados (POST) - Roda em background (Fire-and-forget)
-function saveDatabase(action, data) {
-    fetch(GOOGLE_SHEETS_URL, {
-        method: 'POST',
-        mode: 'no-cors', // Evita bloqueios de CORS no envio silencioso
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ action: action, data: JSON.stringify(data) }).toString()
-    }).catch(e => console.error(`Erro ao salvar [${action}]:`, e));
-}
-
-// ==================================================================
-// 1. INICIALIZAÇÃO CENTRALIZADA (DOM CONTENT LOADED)
-// ==================================================================
-document.addEventListener('DOMContentLoaded', async () => {
-    // Proteção de Interface
+// ------------------------------------------------------------------
+// 1. INICIALIZAÇÃO E TRAVA DE TEXTO DE INTERFACE
+// ------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+    // Garante que o documento principal não seja editável por padrão
     document.body.removeAttribute('contenteditable');
+
+    // Desativa edição explícita em elementos de texto, títulos e legendas
     const protectedSelectors = 'h1, h2, h3, h4, h5, h6, span, p, label, .zone-header, .lane-title, .app-drawer h2, .main-navbar';
-    document.querySelectorAll(protectedSelectors).forEach(el => el.contentEditable = "false");
+    document.querySelectorAll(protectedSelectors).forEach(el => {
+        el.contentEditable = "false";
+    });
 
-    // Tema e Sessão (Mantidos localmente pois são config do dispositivo do usuário)
-    const temaSalvo = localStorage.getItem('wms_current_theme') || 'dark';
-    mudarTema(temaSalvo);
-    verificarStatusSessao();
-
-    // Mapeamento de Eventos (Botões)
-    mapearEventosGlobais();
-
-    // Carregamento de Estado do Layout via Google Sheets
-    if (obterUsuarioAtual() !== 'Nenhum operador logado') {
-        await carregarEstadoGeral();
-    }
-    
-    // Telas Específicas
-    if (document.getElementById('history-table-body')) {
-        await carregarDadosDoSheets();
-        carregarHistoricoComMedias();
-    }
-    
-    if (document.getElementById('kpi-ocupacao-pendentes-perc') || document.getElementById('graficoErros')) {
-        atualizarDashboard();
-        if (dashInterval) clearInterval(dashInterval);
-        dashInterval = setInterval(atualizarDashboard, 5000);
-    }
+    // Inicializa o contador da Zona Vermelha
+    updateRedCounter();
 });
 
-function mapearEventosGlobais() {
-    const btnSearch = document.querySelector('.btn-search');
-    if (btnSearch) btnSearch.addEventListener('click', realizarConsulta);
+// ------------------------------------------------------------------
+// 2. SELEÇÃO E AÇÕES DE PALETES (SINCRONIZADO COM CSS)
+// ------------------------------------------------------------------
+function selectPalletElement(element, name) {
+    if (!element) return;
 
-    const inputSearch = document.getElementById('search-input');
-    if (inputSearch) inputSearch.addEventListener('keypress', (e) => { if (e.key === 'Enter') realizarConsulta(); });
+    // Remove destaque visual de qualquer palete selecionado anteriormente
+    document.querySelectorAll('.pallet.selected').forEach(el => {
+        el.classList.remove('selected');
+    });
 
-    const btnRemover = document.querySelector('.action-buttons .btn-action.danger');
-    if (btnRemover) btnRemover.addEventListener('click', removerMUAtual);
-
-    const btnMover = document.querySelector('.action-buttons .btn-action.primary');
-    if (btnMover) btnMover.addEventListener('click', moverMUAtual);
-
-    const btnAlterarStatus = document.getElementById('btn-alterar-status');
-    if (btnAlterarStatus) btnAlterarStatus.addEventListener('click', alterarStatusMUAtual);
-
-    const btnSelecionarErros = document.getElementById('btn-selecionar-erros');
-    if (btnSelecionarErros) btnSelecionarErros.addEventListener('click', abrirModalSelecaoErros);
-}
-
-// ==================================================================
-// 2. GERENCIAMENTO DE AUTENTICAÇÃO (VIA SHEETS)
-// ==================================================================
-function verificarStatusSessao() {
-    const usuarioAtivo = localStorage.getItem('usuario_ativo_wms');
-    const authContainer = document.getElementById('auth-system-container');
-
-    if (usuarioAtivo && authContainer) {
-        authContainer.style.display = 'none';
-    } else if (authContainer) {
-        authContainer.style.display = 'flex';
-    }
-}
-
-function switchAuthTab(tabName, event) {
-    document.querySelectorAll('.auth-tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-
-    const targetTab = document.getElementById(`tab-${tabName}`);
-    if (targetTab) targetTab.classList.add('active');
+    // Aplica a classe de seleção CSS no palete atual
+    selectedElement = element;
+    selectedName = name;
+    selectedElement.classList.add('selected');
     
-    if (event && event.currentTarget) event.currentTarget.classList.add('active');
-    if (tabName === 'status') atualizarStatusSessaoUI();
+    // Recupera a lista de MUs do palete selecionado
+    const mus = palletMUs[element.id] || [];
+    const displayName = element.innerText !== '[ Vazio ]' ? element.innerText : name;
+    
+    updateStatus(`
+        📦 <strong>Palete Selecionado:</strong> <span style="color:#38bdf8">${displayName}</span><br>
+        📊 <strong>MUs Cadastradas:</strong> ${mus.length}/30<br>
+        <small>${mus.length > 0 ? 'MUs: ' + mus.join(', ') : 'Nenhuma MU bipada ainda.'}</small>
+    `);
 }
 
-async function realizarCadastro(event) {
-    event.preventDefault();
-    const nome = document.getElementById('reg-fullname').value.trim();
-    const usuario = document.getElementById('reg-username').value.trim().toLowerCase();
-    const senha = document.getElementById('reg-password').value.trim();
-
-    if (!nome || !usuario || !senha) return exibirToast('error', 'Erro', 'Preencha todos os campos.');
-
-    exibirToast('info', 'Aguarde', 'Verificando banco de dados...', 2000);
-    
-    let usuarios = await fetchDatabase('get_usuarios') || [];
-
-    if (usuarios.some(u => u.usuario === usuario)) {
-        return exibirToast('warning', 'Usuário duplicado', 'Este usuário já está cadastrado!');
+function triggerAction(actionName) {
+    if (!selectedElement) {
+        alert('Por favor, selecione um palete na Zona Amarela primeiro!');
+        return;
     }
 
-    usuarios.push({ nome, usuario, senha });
-    saveDatabase('save_usuarios', usuarios);
+    const elementId = selectedElement.id;
 
-    exibirToast('success', 'Cadastro concluído', `Operador "${nome}" cadastrado com sucesso!`);
-    document.getElementById('auth-register-form').reset();
-    switchAuthTab('login', null);
-}
-
-async function realizarLogin(event) {
-    event.preventDefault();
-    const usuarioInput = document.getElementById('login-username').value.trim().toLowerCase();
-    const senhaInput = document.getElementById('login-password').value.trim();
-
-    exibirToast('info', 'Aguarde', 'Autenticando...', 2000);
-    
-    let usuarios = await fetchDatabase('get_usuarios') || [];
-
-    if (usuarios.length === 0) {
-        usuarios.push({ nome: "Admin WMS", usuario: "admin", senha: "123" });
-        saveDatabase('save_usuarios', usuarios);
-    }
-
-    const auth = usuarios.find(u => u.usuario === usuarioInput && u.senha === senhaInput);
-
-    if (auth) {
-        const dadosSessao = `${auth.nome} (${auth.usuario})`;
-        localStorage.setItem('usuario_ativo_wms', dadosSessao);
-        localStorage.setItem('wms_login_timestamp', Date.now());
-        
-        document.getElementById('auth-system-container').style.display = 'none';
-        exibirToast('success', 'Login bem-sucedido', `Bem-vindo, ${auth.nome}!`);
-        await carregarEstadoGeral();
-    } else {
-        exibirToast('error', 'Falha de autenticação', 'Usuário ou senha incorretos!');
-    }
-}
-
-function atualizarStatusSessaoUI() {
-    const statusEl = document.getElementById('auth-status-user');
-    if (statusEl) statusEl.innerHTML = `👤 <strong>Usuário Ativo:</strong> ${obterUsuarioAtual()}`;
-}
-
-function realizarLogout() {
-    if (confirm('Deseja realmente encerrar a sessão?')) {
-        localStorage.removeItem('usuario_ativo_wms');
-        localStorage.removeItem('wms_login_timestamp');
-        location.reload(); 
-    }
-}
-
-// ==================================================================
-// 3. CONFIGURAÇÕES E TIMERS
-// ==================================================================
-function abrirConfiguracoes() {
-    const modal = document.getElementById('config-modal');
-    if (modal) { modal.style.display = 'flex'; carregarDadosConfiguracao(); }
-}
-
-function fecharConfiguracoes() {
-    const modal = document.getElementById('config-modal');
-    if (modal) modal.style.display = 'none';
-}
-
-function carregarDadosConfiguracao() {
-    const nomeEl = document.getElementById('cfg-user-name');
-    if (nomeEl) nomeEl.innerText = obterUsuarioAtual();
-
-    if (!localStorage.getItem('wms_login_timestamp')) localStorage.setItem('wms_login_timestamp', Date.now());
-
-    if (timerInterval) clearInterval(timerInterval);
-    atualizarCronometroSessao();
-    timerInterval = setInterval(atualizarCronometroSessao, 1000);
-}
-
-function atualizarCronometroSessao() {
-    const loginTime = parseInt(localStorage.getItem('wms_login_timestamp')) || Date.now();
-    const diffMs = Math.max(0, Date.now() - loginTime);
-    const s = Math.floor(diffMs / 1000);
-    const timeStr = `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-    const timerEl = document.getElementById('cfg-session-timer');
-    if (timerEl) timerEl.innerText = timeStr;
-}
-
-function mudarTema(tema) {
-    document.body.classList.remove('theme-dark', 'theme-light', 'theme-meli');
-    document.body.classList.add(`theme-${tema}`);
-    localStorage.setItem('wms_current_theme', tema);
-}
-
-async function alterarSenhaOperador(event) {
-    event.preventDefault();
-    const senhaAntiga = document.getElementById('cfg-old-pass').value.trim();
-    const senhaNova = document.getElementById('cfg-new-pass').value.trim();
-    const sessaoCompleta = localStorage.getItem('usuario_ativo_wms');
-
-    if (!sessaoCompleta) return exibirToast('error', 'Erro', 'Sessão inválida.');
-    const matchUser = sessaoCompleta.match(/\(([^)]+)\)$/);
-    if (!matchUser) return exibirToast('error', 'Erro', 'Identificação falhou.');
-    
-    exibirToast('info', 'Aguarde', 'Atualizando no servidor...');
-    let usuarios = await fetchDatabase('get_usuarios') || [];
-    const idx = usuarios.findIndex(u => u.usuario === matchUser[1]);
-
-    if (idx !== -1 && usuarios[idx].senha === senhaAntiga) {
-        usuarios[idx].senha = senhaNova;
-        saveDatabase('save_usuarios', usuarios);
-        exibirToast('success', 'Sucesso', 'Senha alterada!');
-        document.getElementById('cfg-old-pass').value = ''; document.getElementById('cfg-new-pass').value = '';
-    } else {
-        exibirToast('error', 'Erro', 'Senha atual incorreta.');
-    }
-}
-
-// ==================================================================
-// 4. FEEDBACK VISUAL
-// ==================================================================
-function exibirToast(tipo, titulo, mensagem, tempo = 3500) {
-    const toastStack = document.getElementById('toast-stack');
-    if (!toastStack) return;
-
-    const toast = document.createElement('div');
-    toast.className = `toast-item ${tipo}`;
-    toast.innerHTML = `<span class="toast-title">${titulo}</span><span class="toast-message">${mensagem}</span>`;
-    toastStack.appendChild(toast);
-
-    setTimeout(() => {
-        toast.classList.add('hide');
-        setTimeout(() => toast.remove(), 300);
-    }, tempo);
-}
-
-function obterUsuarioAtual() {
-    return localStorage.getItem('usuario_ativo_wms') || 'Nenhum operador logado';
-}
-
-// ==================================================================
-// 5. PERSISTÊNCIA DE MAPA E LAYOUT (NO GOOGLE SHEETS)
-// ==================================================================
-function salvarEstadoGeral() {
-    // Debounce: Aguarda 1 segundo após a última ação para enviar ao servidor (evita travamentos)
-    if (syncTimeout) clearTimeout(syncTimeout);
-    
-    syncTimeout = setTimeout(() => {
-        const palletsData = Array.from(document.querySelectorAll('.pallet')).map(p => ({
-            id: p.id,
-            text: p.innerText,
-            className: p.className,
-            parentId: p.parentElement.id || p.parentElement.getAttribute('data-lane') || ''
-        }));
-        
-        const payload = {
-            palletMUs: palletMUs,
-            currentIdCounter: currentIdCounter,
-            layout: palletsData
-        };
-        
-        saveDatabase('save_layout', payload);
-        chamarDashboardBackground();
-    }, 1000); 
-}
-
-async function carregarEstadoGeral() {
-    const toastInfo = document.getElementById('toast-stack');
-    if (toastInfo) exibirToast('info', 'Sincronização', 'Baixando mapa do servidor...', 2000);
-    
-    const db = await fetchDatabase('get_layout');
-    
-    if (db) {
-        palletMUs = db.palletMUs || {};
-        currentIdCounter = db.currentIdCounter || 1;
-        const savedLayout = db.layout || null;
-
-        if (savedLayout) {
-            document.querySelectorAll('.pallet').forEach(p => p.remove());
-
-            savedLayout.forEach(data => {
-                let parent = document.getElementById(data.parentId) || document.querySelector(`[data-lane="${data.parentId}"]`);
-                if (!parent) return;
-
-                const p = document.createElement('div');
-                p.id = data.id; p.innerText = data.text; p.className = data.className;
-                p.draggable = true;
-                p.setAttribute('ondragstart', 'drag(event)');
-                const nomePainel = data.text.includes('PL') ? data.text : `Pallet ${data.text}`;
-                p.setAttribute('onclick', `selectPalletElement(this, '${nomePainel}')`);
-                parent.appendChild(p);
-            });
+    // --- GATILHO 1: Concluir Checagem HH (Laranja -> Amarelo Check) ---
+    if (actionName === 'Checagem HH') {
+        if (!selectedElement.classList.contains('yellow-no-id')) {
+            alert('Este palete já passou pela checagem ou não está pendente!');
+            return;
         }
+
+        selectedElement.className = 'pallet yellow-checked selected';
+        selectedElement.innerText = 'Check';
+        
+        palletMUs[elementId] = [];
+
+        updateStatus(`
+            🟡 <strong>Checagem HH Concluída!</strong><br>
+            📍 <strong>Status:</strong> Pronto para Bipagem/Cadastro de MUs.<br>
+            <small>Utilize "Cadastrar MU" para bipar pacotes ou "Vincular ID" para atrelar a placa.</small>
+        `);
+        return;
     }
-    updateRedCounter();
+
+    // --- GATILHO 2: Cadastrar MUs (Bipagem) ---
+    if (actionName === 'Cadastrar MU' || actionName === 'Cadastrar ID') {
+        if (!selectedElement.classList.contains('yellow-checked')) {
+            alert('Conclua a checagem no HH antes de cadastrar as MUs!');
+            return;
+        }
+
+        if (!palletMUs[elementId]) {
+            palletMUs[elementId] = [];
+        }
+
+        let currentMUs = palletMUs[elementId];
+        let bipando = true;
+
+        while (bipando && currentMUs.length < 30) {
+            const inputMU = prompt(
+                `📦 [CADASTRO DE MUs - PALETE]\n` +
+                `MUs Atuais: ${currentMUs.length}/30\n\n` +
+                `Bipe a MU com o leitor QR Code ou digite o código:\n` +
+                `(Ex: MU-TT-RC-20A-123)\n\n` +
+                `(Clique em 'Cancelar' para encerrar a bipagem)`
+            );
+
+            if (inputMU === null || inputMU.trim() === "") {
+                bipando = false;
+            } else {
+                const muCode = inputMU.trim().toUpperCase();
+                
+                if (!muCode.startsWith("MU")) {
+                    alert(`❌ Código Inválido: "${muCode}"\n\nO código da MU deve começar obrigatoriamente com "MU".`);
+                } else if (muCode.length !== 16) {
+                    alert(`❌ Tamanho Inválido: "${muCode}" (${muCode.length} caracteres)\n\nO código da MU deve conter EXATAMENTE 16 caracteres.\nExemplo válido: MU-TT-RC-20A-123`);
+                } else if (currentMUs.includes(muCode)) {
+                    alert(`⚠️ A MU "${muCode}" já foi bipada neste palete!`);
+                } else {
+                    currentMUs.push(muCode);
+                    alert(`✅ MU "${muCode}" adicionada com sucesso! Total: ${currentMUs.length}/30`);
+                }
+            }
+        }
+
+        if (currentMUs.length >= 30) {
+            alert("🛑 Limite máximo de 30 Movable Units (MUs) atingido para este palete!");
+        }
+
+        updateStatus(`
+            📦 <strong>MUs Bipadas com Sucesso!</strong><br>
+            📍 <strong>Total no Palete (${currentMUs.length}/30):</strong> ${currentMUs.length > 0 ? currentMUs.join(', ') : 'Nenhuma'}<br>
+            <small>Clique em "Vincular ID" para atribuir a placa do palete e liberá-lo.</small>
+        `);
+        return;
+    }
+
+// --- GATILHO 3: Vincular ID (Abertura Direta da Placa) ---
+    if (actionName === 'Vincular ID') {
+        if (!selectedElement.classList.contains('yellow-checked')) {
+            alert('Selecione um palete verificado no HH (estado Check) para vincular o ID!');
+            return;
+        }
+
+        let currentMUs = palletMUs[elementId] || [];
+
+        if (currentMUs.length === 0) {
+            alert('❌ Bloqueado: Não é possível vincular o ID a um palete sem MUs!\n\nCadastre/bipe pelo menos uma MU antes de continuar.');
+            return;
+        }
+
+        let finalID = "";
+        let idValido = false;
+
+        while (!idValido) {
+            const suggestedID = `PL-${String(currentIdCounter).padStart(2, '0')}`;
+            const inputID = prompt(
+                `🏷️ [VINCULAR PLACA DE ID]\n` +
+                `Total de MUs vinculadas: ${currentMUs.length}\n\n` +
+                `Aproxime o leitor ou digite o ID do Palete: (Ex: PL-01)`, 
+                suggestedID
+            );
+
+            if (inputID === null || inputID.trim() === "") {
+                alert("Operação cancelada. O palete continuará sem ID vinculado.");
+                return;
+            }
+
+            const inputFormatado = inputID.trim().toUpperCase();
+            const regexPL = /^PL-?\d+$/;
+
+            if (!regexPL.test(inputFormatado)) {
+                alert(`❌ ID Inválido: "${inputFormatado}"\n\nO código do palete DEVE começar obrigatoriamente com "PL" seguido de números.\nExemplos válidos: PL-01, PL01, PL-12`);
+            } else {
+                finalID = inputFormatado;
+                idValido = true;
+            }
+        }
+
+        selectedElement.innerText = finalID;
+        selectedElement.className = 'pallet blue selected';
+
+        updateStatus(`
+            🔵 <strong>Palete Cadastrado & Liberado para as Ruas!</strong><br>
+            📍 <strong>Placa Validada:</strong> ${finalID}<br>
+            📦 <strong>MUs Vinculadas (${currentMUs.length}/30):</strong> ${currentMUs.length > 0 ? currentMUs.join(', ') : 'Sem MUs'}<br>
+            <small>Pronto para canalização nas ruas da Zona Cinza.</small>
+        `);
+
+        if (currentIdCounter < 99) currentIdCounter++;
+        return;
+    }
+
+    // --- GATILHO 4: Despachar Pallet (Zona Verde -> Histórico e Planilha) ---
+    if (actionName === 'Despachar PL') {
+        const isZonaVerde = selectedElement.closest('.green-zone') !== null || selectedElement.classList.contains('green');
+
+        if (!isZonaVerde) {
+            alert('Apenas paletes posicionados na Zona Verde podem ser despachados!');
+            return;
+        }
+
+        const idPallet = selectedElement.innerText.trim();
+        const musPallet = palletMUs[elementId] || [];
+
+        if (musPallet.length === 0) {
+            alert('❌ Não é possível despachar um palete sem MUs registradas!');
+            return;
+        }
+
+if (confirm(`🚚 Confirma o despacho do Palete ${idPallet}?\n\nSerão enviadas ${musPallet.length} linhas de MUs para a planilha.`)) {
+            const dataAtual = new Date();
+            const dataHoraFormatada = dataAtual.toLocaleString('pt-BR');
+            
+            // 1. USUÁRIO QUE DESPACHOU:
+            // Ajuste para a variável ou localStorage onde você guarda o nome do operador logado
+            const usuarioLogado = localStorage.getItem('usuarioLogado') || 'Usuário Padrão';
+
+            const registrosParaEnviar = musPallet.map(mu => {
+                
+                // 2. QUANTAS AÇÕES FORAM FEITAS (Analisando o histórico):
+                // Substitua 'historicoGlobal' pelo array onde você guarda as movimentações.
+                // Isso filtra o histórico contando quantas vezes essa MU aparece lá.
+                const acoesRealizadas = historicoGlobal.filter(registro => registro.mu === mu).length;
+
+                // 3. TEMPO NO BUFFER:
+                // Precisamos achar que horas essa MU entrou. 
+                // Substitua 'musAtivas' pelo array que contém os dados atuais dessa MU no buffer.
+                const dadosOriginaisMu = musAtivas.find(item => item.mu === mu);
+                let tempoNoBufferFormatado = '0 min';
+
+                if (dadosOriginaisMu && dadosOriginaisMu.horaEntrada) {
+                    const horaQueEntrou = new Date(dadosOriginaisMu.horaEntrada);
+                    const diferencaMs = dataAtual - horaQueEntrou; // Tempo total em milissegundos
+                    
+                    // Convertendo milissegundos para minutos
+                    const minutosTotais = Math.floor(diferencaMs / (1000 * 60));
+                    
+                    // Formatando para ficar bonito (Ex: "1h 15m" ou apenas "45m")
+                    if (minutosTotais >= 60) {
+                        const horas = Math.floor(minutosTotais / 60);
+                        const minutos = minutosTotais % 60;
+                        tempoNoBufferFormatado = `${horas}h ${minutos}m`;
+                    } else {
+                        tempoNoBufferFormatado = `${minutosTotais}m`;
+                    }
+                }
+
+                // 4. RETORNO DO OBJETO COMPLETO PARA A PLANILHA
+                return {
+                    dataDespacho: dataHoraFormatada,
+                    palletID: idPallet,
+                    mu: mu,
+                    acoesFeitas: acoesRealizadas,
+                    tempoNoBuffer: tempoNoBufferFormatado,
+                    usuario: usuarioLogado
+                };
+            });
+
+            let historico = JSON.parse(localStorage.getItem('buffer_historico')) || [];
+            historico.push(...registrosParaEnviar);
+            localStorage.setItem('buffer_historico', JSON.stringify(historico));
+
+            const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxNTGqcULjGg-5f21s9vXQ7sSZrumJ61FKL--yncse7USxbNsl-vAWgjIfqOhEpPEqi3w/exechttps://script.google.com/macros/s/AKfycbxPsyrJdzUQJFKh_3xnA-PkKINZkZCCeCnJN9KCd9IXca4bWU2wtXS101DQbf9qLi3A_g/exec";
+
+            const formData = new URLSearchParams();
+            formData.append('payload', JSON.stringify(registrosParaEnviar));
+
+            fetch(SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData.toString()
+            })
+            .then(() => console.log(`✅ ${registrosParaEnviar.length} MUs enviadas com sucesso para a planilha!`))
+            .catch(error => console.error("❌ Erro ao enviar para a planilha:", error));
+
+            delete palletMUs[elementId];
+            selectedElement.remove();
+            selectedElement = null;
+
+            updateStatus(`
+                🟢 <strong>Palete Despachado com Sucesso!</strong><br>
+                📍 <strong>Placa:</strong> ${idPallet}<br>
+                📊 <strong>Registrado na Planilha:</strong> ${registrosParaEnviar.length} linhas de MUs inseridas.<br>
+            `);
+        }
+        return;
+    }
 }
 
-// ==================================================================
-// 6. REGRAS DE DRAG & DROP E VALIDAÇÕES
-// ==================================================================
-function validarMovimentacaoPallet(pallet, zonaDestino) {
-    if (!pallet) return { ok: false, motivo: 'Palete inválido.' };
-    const isRed = pallet.classList.contains('red');
-    const isYellowNoId = pallet.classList.contains('yellow-no-id');
-    const isYellowChecked = pallet.classList.contains('yellow-checked');
-    const isBlue = pallet.classList.contains('blue');
-    const isGreen = pallet.classList.contains('green');
-
-    switch (zonaDestino) {
-        case 'amarela': return (isRed || isGreen) ? { ok: true } : { ok: false, motivo: 'Apenas paletes vermelhos ou verdes podem ir para triagem.' };
-        case 'rua':
-            if (isYellowChecked || isBlue || isGreen) return { ok: true };
-            if (isYellowNoId) return { ok: false, motivo: 'Faça a Checagem HH antes de enviar para a rua.' };
-            return { ok: false, motivo: 'Paletes vermelhos devem passar pela triagem antes da rua.' };
-        case 'verde': return isBlue ? { ok: true } : { ok: false, motivo: 'Apenas paletes com ID (Azul) podem ir para expedição.' };
-        default: return { ok: false, motivo: 'Zona desconhecida.' };
-    }
-}
-
+// ------------------------------------------------------------------
+// 3. EVENTOS DRAG & DROP INTEGRADOS COM CLASSES CSS
+// ------------------------------------------------------------------
 function allowDrop(event) {
     event.preventDefault();
-    if(event.currentTarget.classList) event.currentTarget.classList.add('drag-over');
+    event.currentTarget.classList.add('drag-over');
 }
 
 function drag(event) {
@@ -379,288 +323,627 @@ function drag(event) {
 }
 
 function clearDragEffects() {
-    document.querySelectorAll('.drag-over, .dragging').forEach(el => el.classList.remove('drag-over', 'dragging'));
+    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
 }
 
-document.addEventListener('dragend', () => { clearDragEffects(); salvarEstadoGeral(); });
+document.addEventListener('dragend', clearDragEffects);
+
 document.addEventListener('dragleave', (e) => {
     if (e.target.classList && (e.target.classList.contains('pallet-row') || e.target.classList.contains('street-lane') || e.target.classList.contains('zone-container'))) {
         e.target.classList.remove('drag-over');
     }
 });
 
-// Ações de Drop
-function dropPalletRed(event, redContainer) {
-    event.preventDefault(); clearDragEffects();
-    const p = document.getElementById(event.dataTransfer.getData("text/plain"));
-    if (!p || p.parentElement === redContainer) return;
-    if (redContainer.children.length >= MAX_RED_PALLETS) return exibirToast('warning', 'Aviso', 'Zona Vermelha cheia.');
-    if (confirm(`⚠️ Retornar palete "${p.innerText}" para a Zona Vermelha reseta as MUs. Confirma?`)) {
-        delete palletMUs[p.id];
-        p.className = 'pallet red'; p.innerText = `P${String(getNextAvailableRedNumber()).padStart(2, '0')}`;
-        redContainer.appendChild(p);
-        updateRedCounter(); salvarEstadoGeral(); updateStatus(`🔴 <strong>Palete retornado.</strong>`);
-    }
-}
-
-function dropPalletYellow(event, yellowContainer) {
-    event.preventDefault(); clearDragEffects();
-    const p = document.getElementById(event.dataTransfer.getData('text/plain'));
-    if (!p) return;
-    if (yellowContainer.querySelectorAll('.pallet').length >= MAX_YELLOW_PALLETS) return exibirToast('info', 'Aviso', 'Zona Amarela cheia.');
-    const val = validarMovimentacaoPallet(p, 'amarela');
-    if (!val.ok) return exibirToast('warning', 'Bloqueado', val.motivo);
-
-    if (p.classList.contains('green')) {
-        const inputPL = prompt(`📦 PL retornando:\n(Confirme: ${p.innerText})`);
-        if (inputPL !== p.innerText.trim()) return exibirToast('error', 'Erro', 'ID não confere.');
-        p.className = 'pallet yellow-checked'; p.innerText = 'Check';
-    } else {
-        p.className = 'pallet yellow-no-id'; p.innerText = 'No ID';
-    }
-    yellowContainer.appendChild(p); updateRedCounter(); salvarEstadoGeral();
-}
-
-function dropPallet(event, laneElement) {
-    event.preventDefault(); clearDragEffects();
-    const p = document.getElementById(event.dataTransfer.getData('text/plain'));
-    if (!p) return;
-    const val = validarMovimentacaoPallet(p, 'rua');
-    if (!val.ok) return exibirToast('warning', 'Bloqueado', val.motivo);
-    if (laneElement.querySelectorAll('.pallet').length >= 6 && !laneElement.contains(p)) return exibirToast('info', 'Aviso', 'Rua cheia.');
-
-    const targetCode = laneElement.getAttribute('data-lane') || laneElement.closest('.street-lane').querySelector('.lane-title').innerText;
-    if (p.classList.contains('yellow-checked') || p.classList.contains('green') || p.closest('.street-lane')) {
-        const confirmRua = prompt(`🚚 Confirme a rua de destino:`, targetCode);
-        if (!confirmRua || confirmRua.toUpperCase().trim() !== targetCode.toUpperCase().trim()) return exibirToast('error', 'Erro', 'Rua não validada.');
-    }
-    p.className = 'pallet blue';
-    if(p.innerText === 'Check' || p.innerText === 'No ID') p.innerText = `PL-${String(currentIdCounter++).padStart(2, '0')}`;
-    laneElement.appendChild(p); updateRedCounter(); salvarEstadoGeral();
-}
-
-function dropPalletGreen(event, greenContainer) {
-    event.preventDefault(); clearDragEffects();
-    const p = document.getElementById(event.dataTransfer.getData('text/plain'));
-    if (!p) return;
-    const val = validarMovimentacaoPallet(p, 'verde');
-    if (!val.ok) return exibirToast('warning', 'Bloqueado', val.motivo);
-    if (greenContainer.querySelectorAll('.pallet').length >= MAX_GREEN_PALLETS) return exibirToast('info', 'Aviso', 'Expedição cheia.');
-    if (confirm(`✅ Liberar ${p.innerText} para expedição?`)) {
-        p.className = 'pallet green'; greenContainer.appendChild(p); updateRedCounter(); salvarEstadoGeral();
-    }
-}
-
-// ==================================================================
-// 7. AÇÕES INFERIORES E PALETES
-// ==================================================================
-function selectPalletElement(element, name) {
-    if (!element) return;
-    document.querySelectorAll('.pallet.selected').forEach(el => el.classList.remove('selected'));
-    selectedElement = element; selectedName = name; selectedElement.classList.add('selected');
-    const mus = palletMUs[element.id] || [];
-    updateStatus(`📦 <strong>Palete:</strong> <span style="color:#38bdf8">${element.innerText}</span><br>📊 <strong>MUs:</strong> ${mus.length}/30<br><small>${mus.length > 0 ? mus.join(', ') : 'Vazio'}</small>`);
-}
-
-function updateStatus(htmlContent) {
-    const statusElement = document.getElementById('app-status');
-    if (statusElement) statusElement.innerHTML = htmlContent;
-}
-
-function triggerAction(actionName) {
-    if (!selectedElement) return exibirToast('info', 'Atenção', 'Selecione um palete primeiro.');
-    const elId = selectedElement.id;
-
-    if (actionName === 'Checagem HH') {
-        if (!selectedElement.classList.contains('yellow-no-id')) return exibirToast('warning', 'Aviso', 'Selecione palete Laranja.');
-        selectedElement.className = 'pallet yellow-checked selected'; selectedElement.innerText = 'Check';
-        palletMUs[elId] = []; updateStatus('🟡 <strong>Checagem concluída.</strong>');
-    }
-    else if (actionName === 'Cadastrar MU') {
-        if (!selectedElement.classList.contains('yellow-checked')) return exibirToast('error', 'Erro', 'Faça Checagem HH primeiro.');
-        if (!palletMUs[elId]) palletMUs[elId] = [];
-        while (palletMUs[elId].length < 30) {
-            let inputMU = prompt(`📦 [BIPAGEM]\nMUs: ${palletMUs[elId].length}/30\nBipe a MU (16 caracteres, inicia com MU):`);
-            if (!inputMU) break;
-            inputMU = inputMU.trim().toUpperCase();
-            if (!inputMU.startsWith('MU') || inputMU.length !== 16) alert('Formato inválido!');
-            else if (palletMUs[elId].includes(inputMU)) alert('MU já bipada!');
-            else palletMUs[elId].push(inputMU);
-        }
-        updateStatus(`📦 <strong>MUs:</strong> ${palletMUs[elId].length}/30`);
-    }
-    else if (actionName === 'Despachar PL') {
-        if (!selectedElement.classList.contains('green')) return exibirToast('error', 'Erro', 'Apenas paletes verdes na expedição podem ser despachados.');
-        const m = palletMUs[elId] || [];
-        if (m.length === 0) return exibirToast('warning', 'Erro', 'Palete sem MUs.');
-
-        if (confirm(`🚚 Despachar ${selectedElement.innerText}?`)) {
-            const payload = m.map(mu => ({
-                dataDespacho: new Date().toLocaleString('pt-BR'), 
-                palletID: selectedElement.innerText, 
-                mu: mu, acoesFeitas: 1, tempoNoBuffer: '0m', usuario: obterUsuarioAtual()
-            }));
-
-            // Adiciona histórico no banco Sheets
-            saveDatabase('save_historico', payload);
-
-            delete palletMUs[elId];
-            selectedElement.remove();
-            selectedElement = null;
-            updateStatus('🟢 <strong>Despachado!</strong>');
-        }
-    }
+// Salva o layout toda vez que você terminar de arrastar um palete
+document.addEventListener('dragend', () => {
     salvarEstadoGeral();
-}
+});
 
+// Salva o layout toda vez que você clicar em qualquer parte da tela 
+// (isso garante que botões como "Cadastrar MU", "Vincular ID", "+" e "-" salvem os dados)
+document.addEventListener('click', () => {
+    salvarEstadoGeral();
+});
+
+// ------------------------------------------------------------------
+// 4. REGRAS DA ZONA VERMELHA
+// ------------------------------------------------------------------
 function getNextAvailableRedNumber() {
     const stack = document.getElementById('red-stack');
     if (!stack) return 1;
-    const used = Array.from(stack.children).map(p => parseInt(p.innerText.replace(/\D/g, '')) || 0);
-    for (let i = 1; i <= MAX_RED_PALLETS; i++) if (!used.includes(i)) return i;
+
+    const usedNumbers = Array.from(stack.children).map(pallet => {
+        const text = pallet.innerText;
+        const match = text.match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+    });
+
+    for (let i = 1; i <= MAX_RED_PALLETS; i++) {
+        if (!usedNumbers.includes(i)) return i;
+    }
     return null;
 }
+
 function addRedPallet() {
     const stack = document.getElementById('red-stack');
-    if (!stack || stack.children.length >= MAX_RED_PALLETS) return;
-    const num = getNextAvailableRedNumber(); if (!num) return;
-    const p = document.createElement('div'); p.className = 'pallet red'; p.id = `pallet-${Date.now()}`;
-    p.draggable = true; p.innerText = `P${String(num).padStart(2, '0')}`;
-    p.setAttribute('ondragstart', 'drag(event)'); p.setAttribute('onclick', `selectPalletElement(this, '${p.innerText}')`);
-    stack.appendChild(p); updateRedCounter(); salvarEstadoGeral();
+    if (!stack) return;
+
+    if (stack.children.length >= MAX_RED_PALLETS) {
+        alert('Capacidade máxima da Zona Vermelha atingida (10 pallets)!');
+        return;
+    }
+
+    const availableNumber = getNextAvailableRedNumber();
+    if (availableNumber === null) {
+        alert('Todos os slots de P01 a P10 na Zona Vermelha já estão preenchidos!');
+        return;
+    }
+
+    const formattedNum = String(availableNumber).padStart(2, '0');
+    
+    // ID único para o sistema interno
+    const uniqueId = `pallet-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const palletLabel = `P${formattedNum}`;
+
+    const pallet = document.createElement('div');
+    pallet.className = 'pallet red';
+    pallet.id = uniqueId; 
+    pallet.draggable = true;
+    pallet.innerText = palletLabel;
+
+    pallet.setAttribute('ondragstart', 'drag(event)');
+    pallet.setAttribute('onclick', `selectPalletElement(this, 'Pallet ${palletLabel}')`);
+
+    stack.appendChild(pallet);
+    updateRedCounter();
+
+    updateStatus(`
+        🔴 <strong>Pallet Adicionado!</strong><br>
+        📍 <strong>Item:</strong> ${palletLabel} criado na Zona Vermelha.<br>
+        <small>Total na área: ${stack.children.length}/${MAX_RED_PALLETS}</small>
+    `);
 }
+
+// 🔥 FUNÇÃO RESTAURADA: Remove o Pallet e corrige a contagem
 function removeRedPallet() {
     const stack = document.getElementById('red-stack');
-    if (!stack || stack.children.length === 0) return;
-    const last = stack.lastElementChild; delete palletMUs[last.id];
-    if (selectedElement === last) selectedElement = null;
-    stack.removeChild(last); updateRedCounter(); salvarEstadoGeral();
+    if (!stack || stack.children.length === 0) {
+        alert('A Zona Vermelha já está vazia!');
+        return;
+    }
+
+    const lastPallet = stack.lastElementChild;
+    const removedName = lastPallet.innerText;
+    
+    if (palletMUs[lastPallet.id]) {
+        delete palletMUs[lastPallet.id];
+    }
+
+    if (selectedElement === lastPallet) {
+        selectedElement = null;
+    }
+
+    stack.removeChild(lastPallet);
+    updateRedCounter();
+
+    updateStatus(`
+        🗑️ <strong>Pallet Removido!</strong><br>
+        📍 <strong>Item:</strong> ${removedName} retirado da Zona Vermelha.<br>
+        <small>Total na área: ${stack.children.length}/${MAX_RED_PALLETS}</small>
+    `);
 }
+
+// 🔥 FUNÇÃO RESTAURADA: Atualiza o número 0/10 na tela
 function updateRedCounter() {
-    const count = document.getElementById('red-count'), stack = document.getElementById('red-stack');
-    if (count && stack) count.innerText = stack.children.length;
+    const countElement = document.getElementById('red-count');
+    const stack = document.getElementById('red-stack');
+    if (countElement && stack) {
+        countElement.innerText = stack.children.length;
+    }
 }
 
-// ==================================================================
-// 8. DASHBOARD E MODAIS
-// ==================================================================
-function chamarDashboardBackground() { if (document.getElementById('kpi-ocupacao-pendentes-perc')) atualizarDashboard(); }
-function atualizarDashboard() {
-    const red = document.getElementById('red-stack')?.children.length || 0;
-    const yel = document.getElementById('yellow-stack')?.children.length || 0;
-    const grn = document.querySelector('.green-zone')?.querySelectorAll('.pallet').length || 0;
-    let sts = 0; document.querySelectorAll('.street-lane').forEach(l => sts += l.querySelectorAll('.pallet').length);
-    const renderBar = (id, ocup, max) => {
-        const pEl = document.getElementById(`${id}-perc`), bEl = document.getElementById(`${id}-bar`);
-        if(pEl && bEl) { const val = Math.min(100, Math.round((ocup/max)*100)); pEl.innerText = `${val}%`; bEl.style.width = `${val}%`; }
-    };
-    renderBar('kpi-ocupacao-pendentes', red, MAX_RED_PALLETS); renderBar('kpi-ocupacao-triagem', yel, MAX_YELLOW_PALLETS);
-    renderBar('kpi-ocupacao-ruas', sts, 30); renderBar('kpi-ocupacao-expedicao', grn, MAX_GREEN_PALLETS);
+function dropPalletRed(event, redContainer) {
+    event.preventDefault();
+    clearDragEffects();
+
+    const palletId = event.dataTransfer.getData("text/plain");
+    const draggedPallet = document.getElementById(palletId);
+    if (!draggedPallet) return;
+
+    const sourceZone = draggedPallet.parentElement;
+    if (sourceZone === redContainer) return;
+
+    if (redContainer.children.length >= MAX_RED_PALLETS) {
+        alert('Capacidade máxima da Zona Vermelha atingida (10 pallets)!');
+        return;
+    }
+
+    const isFromGreen = sourceZone.id === 'green-stack' || sourceZone.closest('.green-zone') || draggedPallet.classList.contains('green');
+    const isFromYellow = sourceZone.id === 'yellow-stack' || sourceZone.closest('.yellow-zone');
+    const isFromStreet = sourceZone.classList.contains('street-lane') || sourceZone.closest('.gray-zone');
+
+    if (isFromGreen || isFromYellow || isFromStreet) {
+        const confirmReturn = confirm(
+            `⚠️ [RETORNO À ZONA VERMELHA]\n` +
+            `Deseja mover o palete "${draggedPallet.innerText}" para a Zona Vermelha?\n` +
+            `ATENÇÃO: Todo o registro do palete (ID vinculado e MUs cadastradas) será EXCLUÍDO e resetado!`
+        );
+
+        if (!confirmReturn) {
+            alert("Operação cancelada! O palete permanece no local de origem.");
+            return;
+        }
+
+        delete palletMUs[draggedPallet.id];
+
+        draggedPallet.className = 'pallet red';
+        
+        const availableNumber = getNextAvailableRedNumber();
+        const formattedNum = String(availableNumber).padStart(2, '0');
+        draggedPallet.innerText = `P${formattedNum}`;
+
+        redContainer.appendChild(draggedPallet);
+        updateRedCounter();
+
+        updateStatus(`
+            🔴 <strong>Palete Retornado à Zona Vermelha!</strong><br>
+            📍 <strong>Registro Excluído:</strong> ID e MUs foram removidos. Palete restaurado ao estado original.<br>
+            <small>Total na área: ${redContainer.children.length}/${MAX_RED_PALLETS}</small>
+        `);
+        return;
+    }
+
+    alert("❌ Movimentação não permitida para a Zona Vermelha!");
+}
+// ------------------------------------------------------------------
+// 5. REGRAS DA ZONA AMARELA
+// ------------------------------------------------------------------
+function dropPalletYellow(event, yellowContainer) {
+    event.preventDefault();
+    clearDragEffects();
+
+    const palletId = event.dataTransfer.getData("text/plain");
+    const draggedPallet = document.getElementById(palletId);
+    if (!draggedPallet) return;
+
+    const sourceZone = draggedPallet.parentElement;
+
+    if (yellowContainer.querySelectorAll('.pallet').length >= MAX_YELLOW_PALLETS) {
+        alert("A Zona Amarela já atingiu a capacidade máxima de 06 paletes!");
+        return;
+    }
+
+    if (sourceZone.id === 'red-stack') {
+        yellowContainer.appendChild(draggedPallet);
+        draggedPallet.className = 'pallet yellow-no-id';
+        draggedPallet.innerText = 'No ID';
+        draggedPallet.setAttribute('onclick', `selectPalletElement(this, '${draggedPallet.id}')`);
+
+        updateRedCounter();
+        updateStatus(`
+            🟠 <strong>Pallet Entrou na Triagem (Zona Amarela)</strong><br>
+            📍 <strong>Estado:</strong> Laranja (Aguardando Checagem HH).<br>
+        `);
+        return;
+    }
+
+    const isFromGreen = sourceZone.id === 'green-stack' || sourceZone.closest('.green-zone') || draggedPallet.classList.contains('green');
+    const isFromStreet = sourceZone.classList.contains('street-lane') || sourceZone.closest('.gray-zone');
+
+    if (isFromGreen || isFromStreet) {
+        const confirmRetriagem = confirm(
+            `❓ [REFAZER TRIAGEM]\n` +
+            `Deseja mover o palete "${draggedPallet.innerText}" de volta para a Zona Amarela?\n` +
+            `O ID será desvinculado e todas as MUs cadastradas serão apagadas!`
+        );
+        
+        if (!confirmRetriagem) {
+            alert("Operação cancelada! O palete permanece onde estava.");
+            return;
+        }
+
+        palletMUs[draggedPallet.id] = [];
+
+        yellowContainer.appendChild(draggedPallet);
+        draggedPallet.className = 'pallet yellow-no-id';
+        draggedPallet.innerText = 'No ID';
+        draggedPallet.setAttribute('onclick', `selectPalletElement(this, '${draggedPallet.id}')`);
+
+        updateRedCounter();
+        updateStatus(`
+            🟠 <strong>Pallet Retornou para Triagem!</strong><br>
+            📍 <strong>Estado:</strong> Alterado para Laranja (No ID). ID e MUs foram desvinculados.<br>
+        `);
+        return;
+    }
+
+    alert("❌ Movimentação não permitida para a Zona Amarela!");
 }
 
-document.addEventListener('dblclick', (event) => {
-    const el = event.target.closest('.pallet'); if (!el) return;
-    const mus = palletMUs[el.id] || [];
-    document.getElementById('modal-title').innerText = `Resumo: ${el.innerText}`;
-    document.getElementById('modal-content').innerHTML = `MUs: ${mus.length}/30<br><br>${mus.join('<br>') || 'Vazio'}`;
-    document.getElementById('pallet-modal').style.display = 'flex';
-});
-function fecharModalPalete() { const modal = document.getElementById('pallet-modal'); if(modal) modal.style.display = 'none'; }
+// ------------------------------------------------------------------
+// MAPEAMENTO FIXO DE CÓDIGOS DAS RUAS
+// ------------------------------------------------------------------
+const LANE_CODES = {
+    'RUA A': 'R-A',
+    'RUA B': 'R-B',
+    'RUA C': 'R-C',
+    'RUA D': 'R-D',
+    'RUA E': 'R-E'
+};
 
-// ==================================================================
-// 9. CONSULTA E HISTÓRICO
-// ==================================================================
-async function realizarConsulta() {
-    const input = document.getElementById('search-input')?.value.trim().toUpperCase();
-    if (!input) return exibirToast('warning', 'Aviso', 'Pesquisa vazia.');
-    exibirToast('info', 'Buscando...', 'Verificando o banco de dados.', 1500);
+function getTargetLaneCode(laneElement) {
+    const attrData = laneElement.getAttribute('data-lane') || '';
+    if (LANE_CODES[attrData.toUpperCase()]) return LANE_CODES[attrData.toUpperCase()];
+    if (Object.values(LANE_CODES).includes(attrData.toUpperCase())) return attrData.toUpperCase();
 
-    const db = await fetchDatabase('get_layout');
-    if (!db) return exibirToast('error', 'Erro', 'Falha na conexão.');
-
-    const layoutRemoto = db.layout || [];
-    const muRemoto = db.palletMUs || {};
-
-    let idFound = null, nameFound = "", mus = [], loc = "Desconhecido";
-
-    if (input.startsWith('PL') || input.startsWith('P')) {
-        const item = layoutRemoto.find(p => p.text.toUpperCase() === input);
-        if (item) { idFound = item.id; nameFound = item.text; mus = muRemoto[item.id] || []; loc = LANE_CODES[item.parentId] || item.parentId; }
-    } else if (input.startsWith('MU')) {
-        for (const [id, mArr] of Object.entries(muRemoto)) {
-            if (mArr.includes(input)) {
-                idFound = id; mus = mArr;
-                const item = layoutRemoto.find(p => p.id === id);
-                if (item) { nameFound = item.text; loc = LANE_CODES[item.parentId] || item.parentId; }
-                break;
-            }
+    const parentLane = laneElement.closest('.street-lane');
+    if (parentLane) {
+        const titleEl = parentLane.querySelector('.lane-title');
+        if (titleEl) {
+            const text = titleEl.innerText.trim().toUpperCase();
+            if (LANE_CODES[text]) return LANE_CODES[text];
+            if (Object.values(LANE_CODES).includes(text)) return text;
         }
     }
-    if (!idFound && mus.length === 0) return exibirToast('error', 'Não achado', 'Código não localizado no mapa.');
-    renderizarTabelaPalete(idFound, nameFound, loc, mus, input);
+
+    return attrData || "R-A";
 }
 
-function renderizarTabelaPalete(idInt, idPal, loc, mus, term) {
-    const tbody = document.querySelector('.data-table tbody');
-    document.querySelector('.card-header-flex h2').innerHTML = `📦 Palete: ${idPal}`;
-    if (!tbody) return;
-    tbody.innerHTML = mus.length ? mus.map(mu => `<tr class="${mu===term?'selected-row':''}">
-        <td>${mu}</td><td>Liberado</td><td>${loc}</td>
-        <td><button class="btn-table" onclick="selecionarMU('${mu}','${idInt}','${idPal}','${loc}')">Selecionar</button></td>
-    </tr>`).join('') : `<tr><td colspan="4">Vazio</td></tr>`;
-    if(mus.length && mus.includes(term)) selecionarMU(term, idInt, idPal, loc);
-}
-function selecionarMU(mu, idInt, idPal, loc) {
-    muSelecionadaGlobal = mu; paleteAtualGlobal = { idInterno: idInt, idPalete: idPal, localizacao: loc };
-    document.getElementById('detail-mu-code').innerText = mu;
-    document.querySelectorAll('.action-buttons .btn-action').forEach(b => b.removeAttribute('disabled'));
+// ------------------------------------------------------------------
+// 6. REGRAS DAS RUAS (ZONA CINZA)
+// ------------------------------------------------------------------
+function dropPallet(event, laneElement) {
+    event.preventDefault();
+    clearDragEffects();
+
+    const palletId = event.dataTransfer.getData("text/plain");
+    const draggedPallet = document.getElementById(palletId);
+    if (!draggedPallet) return;
+
+    const sourceZone = draggedPallet.parentElement;
+
+    if (sourceZone.id === 'red-stack') {
+        alert("🔒 TRAVA DE SEGURANÇA: Paletes da Zona Vermelha DEVEM passar obrigatoriamente pela Zona Amarela antes de irem para as ruas!");
+        return;
+    }
+
+    const isFromYellow = sourceZone.id === 'yellow-stack' || sourceZone.closest('.yellow-zone');
+    const isFromGreen = sourceZone.id === 'green-stack' || sourceZone.closest('.green-zone') || draggedPallet.classList.contains('green');
+    const isFromStreet = sourceZone.classList.contains('street-lane') || sourceZone.closest('.gray-zone');
+
+    // Transferência Entre Ruas
+    if (isFromStreet && sourceZone !== laneElement) {
+        const expectedPL = draggedPallet.innerText.trim();
+        const targetLaneCode = getTargetLaneCode(laneElement);
+
+        const inputPL = prompt(
+            `🔄 [TRANSFERÊNCIA ENTRE RUAS - PASSO 1/2]\n\n` +
+            `Bipe ou digite a PLACA (PL) que será transferida:\n` +
+            `(Placa esperada: ${expectedPL})`
+        );
+
+        if (inputPL === null || inputPL.trim().toUpperCase() !== expectedPL.toUpperCase()) {
+            alert("❌ Validação de PL falhou! O palete permanece na rua de origem.");
+            return;
+        }
+
+        const inputRua = prompt(
+            `🔄 [TRANSFERÊNCIA ENTRE RUAS - PASSO 2/2]\n\n` +
+            `PL ${expectedPL} confirmada!\n` +
+            `Bipe o QR Code ou digite o CÓDIGO FIXO da rua de destino para alocar:\n` +
+            `(Código esperado: ${targetLaneCode})`
+        );
+
+        if (inputRua === null || inputRua.trim().toUpperCase() !== targetLaneCode.toUpperCase()) {
+            alert(`❌ Validação de Rua falhou!\n\nO código informado ("${inputRua ? inputRua.trim().toUpperCase() : ''}") não confere com o código fixo da rua de destino (${targetLaneCode}).`);
+            return;
+        }
+    }
+
+    // Entrada da Amarela/Verde para as Ruas
+    if (isFromYellow || isFromGreen) {
+        if (isFromYellow && !draggedPallet.classList.contains('blue')) {
+            alert("🔒 TRAVA DE MOVIMENTAÇÃO: O palete na Zona Amarela precisa passar pela 'Checagem HH' e ter o 'ID Bipado' (ficando AZUL) para ser liberado para as ruas!");
+            return;
+        }
+
+        const expectedID = draggedPallet.innerText.trim();
+        const targetLaneCode = getTargetLaneCode(laneElement);
+
+        const inputPL = prompt(
+            `🔒 [ALOCAÇÃO NA RUA - PASSO 1/2]\n\n` +
+            `Bipe o QR Code ou digite o ID do palete para vincular:\n` +
+            `(ID esperado: ${expectedID})`,
+            expectedID
+        );
+
+        if (inputPL === null || inputPL.trim().toUpperCase() !== expectedID.toUpperCase()) {
+            alert("❌ Validação de ID incorreta! O palete permanece na zona de origem.");
+            return;
+        }
+
+        const inputRua = prompt(
+            `🔒 [ALOCAÇÃO NA RUA - PASSO 2/2]\n\n` +
+            `Palete ${expectedID} confirmado!\n` +
+            `Agora bipe o QR Code ou digite o CÓDIGO FIXO da rua para alocar:\n` +
+            `(Código esperado: ${targetLaneCode})`
+        );
+
+        if (inputRua === null || inputRua.trim().toUpperCase() !== targetLaneCode.toUpperCase()) {
+            alert(`❌ Validação de Rua falhou!\n\nO código informado ("${inputRua ? inputRua.trim().toUpperCase() : ''}") não confere com o código fixo da rua de destino (${targetLaneCode}).`);
+            return;
+        }
+
+        const isSelected = draggedPallet.classList.contains('selected');
+        draggedPallet.className = `pallet blue${isSelected ? ' selected' : ''}`;
+    }
+
+    if (laneElement.querySelectorAll('.pallet').length >= 6 && !laneElement.contains(draggedPallet)) {
+        alert("Esta rua já atingiu o limite máximo de 6 paletes!");
+        return;
+    }
+
+    laneElement.appendChild(draggedPallet);
+    updateRedCounter();
+
+    const currentLaneCode = getTargetLaneCode(laneElement);
+
+    updateStatus(`
+        🚚 <strong>Palete Alocado na Rua!</strong><br>
+        📍 <strong>Item:</strong> ${draggedPallet.innerText}<br>
+        📍 <strong>Rua Destino:</strong> ${currentLaneCode}<br>
+        📍 <strong>Estado:</strong> Azul (Vinculado à Rua).<br>
+    `);
 }
 
-function removerMUAtual() {
-    if (!muSelecionadaGlobal) return;
-    if (confirm(`Remover MU ${muSelecionadaGlobal}?`)) {
-        palletMUs[paleteAtualGlobal.idInterno] = palletMUs[paleteAtualGlobal.idInterno].filter(m => m !== muSelecionadaGlobal);
-        salvarEstadoGeral(); exibirToast('success', 'Removida', 'MU removida!'); realizarConsulta();
+// ------------------------------------------------------------------
+// 7. REGRAS DA ZONA VERDE (EXPEDIÇÃO)
+// ------------------------------------------------------------------
+function dropPalletGreen(event, greenContainer) {
+    event.preventDefault();
+    clearDragEffects();
+
+    const palletId = event.dataTransfer.getData("text/plain");
+    const draggedPallet = document.getElementById(palletId);
+    if (!draggedPallet) return;
+
+    const sourceZone = draggedPallet.parentElement;
+
+    if (greenContainer.querySelectorAll('.pallet').length >= MAX_GREEN_PALLETS) {
+        alert("A Zona Verde já atingiu a capacidade máxima de 12 paletes!");
+        return;
+    }
+
+    if (sourceZone.id === 'yellow-stack' || sourceZone.closest('.yellow-zone')) {
+        if (!draggedPallet.classList.contains('blue')) {
+            alert("🔒 TRAVA DE SEGURANÇA: Somente paletes liberados com ID (AZUL) podem ir para a Zona Verde!");
+            return;
+        }
+
+        const confirmMUs = confirm(`❓ [LIBERAÇÃO DIRETA DE TRIAGEM]\nVocê está movendo o palete diretamente da Zona Amarela.\nTodas as MUs deste palete estão devidamente liberadas para Expedição?`);
+
+        if (!confirmMUs) {
+            alert("❌ Operação cancelada! O palete retornará para a Zona Amarela.");
+            return;
+        }
+
+        const isSelected = draggedPallet.classList.contains('selected');
+        draggedPallet.className = `pallet green${isSelected ? ' selected' : ''}`;
+        greenContainer.appendChild(draggedPallet);
+        updateRedCounter();
+
+        updateStatus(`
+            🟢 <strong>Pallet Liberado Direto da Triagem!</strong><br>
+            📍 <strong>Item:</strong> ${draggedPallet.innerText}<br>
+            📍 <strong>Estado:</strong> Alterado para Verde (Expedição).<br>
+        `);
+        return;
+    }
+
+    if (sourceZone.classList.contains('street-lane') || sourceZone.closest('.gray-zone')) {
+        const isApproved = confirm(`❓ [LIBERAÇÃO DE EXPEDIÇÃO]\nConfirma que o palete "${draggedPallet.innerText}" está realmente liberado para a Zona Verde?`);
+
+        if (!isApproved) {
+            alert(`⚠️ Liberação não autorizada! O palete "${draggedPallet.innerText}" voltará para a rua em que estava.`);
+            return;
+        }
+
+        const isSelected = draggedPallet.classList.contains('selected');
+        draggedPallet.className = `pallet green${isSelected ? ' selected' : ''}`;
+        greenContainer.appendChild(draggedPallet);
+        updateRedCounter();
+
+        updateStatus(`
+            🟢 <strong>Pallet Liberado para Expedição!</strong><br>
+            📍 <strong>Item:</strong> ${draggedPallet.innerText}<br>
+            📍 <strong>Estado:</strong> Alterado para Verde (Expedição).<br>
+        `);
+        return;
+    }
+
+    alert("❌ Origem inválida para a Zona Verde!");
+}
+
+// ------------------------------------------------------------------
+// 8. HELPER DE STATUS DE INTERFACE
+// ------------------------------------------------------------------
+function updateStatus(htmlContent) {
+    const statusElement = document.getElementById('app-status');
+    if (statusElement) {
+        statusElement.innerHTML = htmlContent;
     }
 }
-function moverMUAtual() {
-    if (!muSelecionadaGlobal) return;
-    const dest = prompt('Destino (Ex: PL-02):')?.trim().toUpperCase();
-    if (!dest || dest === paleteAtualGlobal.idPalete) return;
+
+// Adicione no final do script.js atual
+function salvarEstadoPaletes() {
+    localStorage.setItem('buffer_pallets', JSON.stringify(palletMUs));
+}
+// ==================================================================
+// SALVAMENTO E CARREGAMENTO DE ESTADO (LOCALSTORAGE)
+// ==================================================================
+
+function salvarEstadoGeral() {
+    // 1. Salva as MUs vinculadas e o contador de IDs
+    localStorage.setItem('buffer_pallets', JSON.stringify(palletMUs));
+    localStorage.setItem('buffer_idCounter', currentIdCounter);
+
+    // 2. Salva a posição física e status (cor) de cada palete na tela
+    const palletsData = [];
+    document.querySelectorAll('.pallet').forEach(p => {
+        palletsData.push({
+            id: p.id,
+            text: p.innerText,
+            className: p.className,
+            // Pega o ID da zona pai, ou o data-lane se for na rua
+            parentId: p.parentElement.id || p.parentElement.getAttribute('data-lane') || ''
+        });
+    });
+    localStorage.setItem('buffer_layout', JSON.stringify(palletsData));
+}
+
+function carregarEstadoGeral() {
+    // 1. Restaura as MUs e o contador
+    const savedMUs = localStorage.getItem('buffer_pallets');
+    if (savedMUs) {
+        Object.assign(palletMUs, JSON.parse(savedMUs));
+    }
+
+    const savedCounter = localStorage.getItem('buffer_idCounter');
+    if (savedCounter) {
+        currentIdCounter = parseInt(savedCounter);
+    }
+
+    // 2. Restaura os paletes na tela
+    const savedLayout = localStorage.getItem('buffer_layout');
+    if (savedLayout) {
+        const palletsData = JSON.parse(savedLayout);
+        
+        // Limpa a tela antes de recriar para não duplicar
+        document.querySelectorAll('.pallet').forEach(p => p.remove());
+
+        palletsData.forEach(data => {
+            const p = document.createElement('div');
+            p.id = data.id;
+            p.innerText = data.text;
+            p.className = data.className;
+            p.draggable = true;
+            
+            // Recria os eventos de clique e arraste
+            p.setAttribute('ondragstart', 'drag(event)');
+            
+            // O nome que vai pro painel operacional precisa ser tratado
+            const nomePainel = data.text.includes('PL') ? data.text : `Pallet ${data.text}`;
+            p.setAttribute('onclick', `selectPalletElement(this, '${nomePainel}')`);
+
+            // Procura onde o palete estava (Zona pai ou Rua)
+            let parent = document.getElementById(data.parentId);
+            if (!parent) {
+                // Se não achou por ID, tenta achar pelo atributo data-lane (Ruas)
+                parent = document.querySelector(`[data-lane="${data.parentId}"]`);
+            }
+            
+            if (parent) {
+                parent.appendChild(p);
+            }
+        });
+    }
+}
+// ==================================================================
+// VISUALIZAÇÃO RESUMIDA DO PALETE (DUPLO CLIQUE COM MODAL COPIÁVEL)
+// ==================================================================
+
+document.addEventListener('dblclick', (event) => {
+    const palletElement = event.target.closest('.pallet');
+    if (!palletElement) return;
+
+    const palletId = palletElement.id;
+    const palletName = palletElement.innerText.trim();
     
-    // Procura no DOM atual (que está sincronizado)
-    const destEl = Array.from(document.querySelectorAll('.pallet')).find(p => p.innerText.toUpperCase() === dest);
-    if (!destEl) return exibirToast('error', 'Erro', 'Destino não encontrado no layout.');
+    const palletMUs = JSON.parse(localStorage.getItem('buffer_pallets')) || {};
+    const mus = palletMUs[palletId] || [];
 
-    palletMUs[paleteAtualGlobal.idInterno] = palletMUs[paleteAtualGlobal.idInterno].filter(m => m !== muSelecionadaGlobal);
-    if (!palletMUs[destEl.id]) palletMUs[destEl.id] = [];
-    palletMUs[destEl.id].push(muSelecionadaGlobal);
+    const primeirasMUs = mus.slice(0, 3);
+    const totalMUs = mus.length;
 
-    salvarEstadoGeral(); exibirToast('success', 'Sucesso', 'MU Movida!'); document.getElementById('search-input').value = dest; realizarConsulta();
-}
+    let estadoAtual = "Pendente / Vermelho";
+    if (palletElement.classList.contains('blue')) estadoAtual = "Liberado / Azul (Na Rua)";
+    else if (palletElement.classList.contains('green')) estadoAtual = "Expedição / Verde";
+    else if (palletElement.classList.contains('yellow-checked')) estadoAtual = "Check Realizado / Amarelo";
+    else if (palletElement.classList.contains('yellow-no-id')) estadoAtual = "Triagem (Sem ID / Laranja)";
 
-function alterarStatusMUAtual() { if(muSelecionadaGlobal) exibirToast('success', 'Sucesso', 'Status alterado.'); }
-function abrirModalSelecaoErros() {
-    if(!muSelecionadaGlobal) return;
-    const erro = prompt(`Erro (Ex: ${LISTA_ERROS_PADRAO[0]}):`);
-    if(erro) exibirToast('warning', 'Erro Registrado', `Erro ${erro} na MU ${muSelecionadaGlobal}`);
-}
+    let horaCriada = "Não registrada";
+    if (palletId.startsWith('pallet-') && palletId.split('-')[1].length > 5) {
+        const timestamp = parseInt(palletId.split('-')[1]);
+        horaCriada = new Date(timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    } else {
+        horaCriada = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
 
-async function carregarDadosDoSheets() {
-    dadosHistorico = await fetchDatabase('get_historico') || [];
-}
-function carregarHistoricoComMedias() {
-    const tbody = document.getElementById('history-table-body');
-    if (!tbody) return;
-    tbody.innerHTML = dadosHistorico.slice().reverse().map(r => `
-        <tr><td>${r.mu}</td><td>${r.palletID||'-'}</td><td>${r.dataDespacho}</td><td>${r.usuario}</td></tr>
-    `).join('');
-}
+    let resumoMUs = primeirasMUs.length > 0 
+        ? primeirasMUs.map((mu, index) => `• ${mu}`).join('<br>') 
+        : '<em>Nenhuma MU cadastrada ainda.</em>';
 
-// Exportações OBRIGATÓRIAS
-Object.assign(window, {
-    switchAuthTab, realizarCadastro, realizarLogin, abrirConfiguracoes, fecharConfiguracoes, mudarTema, 
-    alterarSenhaOperador, realizarLogout, selectPalletElement, triggerAction, allowDrop, drag, addRedPallet, 
-    removeRedPallet, dropPalletRed, dropPalletYellow, dropPallet, dropPalletGreen, fecharModalPalete, 
-    realizarConsulta, removerMUAtual, moverMUAtual, alterarStatusMUAtual, abrirModalSelecaoErros, selecionarMU
+    if (totalMUs > 3) {
+        resumoMUs += `<br><span style="color:#94a3b8;">... e mais ${totalMUs - 3} MU(s).</span>`;
+    }
+
+    // Preenche o conteúdo dentro da janelinha modal
+    document.getElementById('modal-title').innerText = `📦 Resumo do Palete: ${palletName}`;
+    document.getElementById('modal-content').innerHTML = `
+        <strong>📊 Estado:</strong> ${estadoAtual}<br>
+        <strong>⏰ Horário de Criação:</strong> ${horaCriada}<br>
+        <strong>📦 Total de MUs:</strong> ${totalMUs}/30<br><br>
+        <strong>--- PRIMEIRAS MUs ---</strong><br>
+        ${resumoMUs}
+    `;
+
+    // Mostra o modal na tela
+    document.getElementById('pallet-modal').style.display = 'flex';
 });
+
+function fecharModalPalete() {
+    document.getElementById('pallet-modal').style.display = 'none';
+}
+
+// Retorna o Status padronizado e o Nome da Área onde o palete está localizado
+function getPalletStatusAndLocation(palletElement) {
+    if (!palletElement) return { status: 'Desconhecido', area: 'N/A' };
+
+    const parent = palletElement.parentElement;
+
+    // 🔴 1. Zona Vermelha
+    if (parent && (parent.id === 'red-stack' || parent.closest('.red-zone'))) {
+        return { 
+            status: 'Pendentes', 
+            area: 'Zona Vermelha (Entrada/Aguardando)' 
+        };
+    }
+
+    // 🟡 2. Zona Amarela (Triagem)
+    if (parent && (parent.id === 'yellow-stack' || parent.closest('.yellow-zone'))) {
+        return { 
+            status: 'Triagem', 
+            area: 'Zona Amarela (Bancada de Triagem)' 
+        };
+    }
+
+    // 🟢 3. Zona Verde (Expedição)
+    if (parent && (parent.id === 'green-stack' || parent.closest('.green-zone'))) {
+        return { 
+            status: 'Liberado', 
+            area: 'Zona Verde (Expedição)' 
+        };
+    }
+
+    // 🔘 4. Canalização / Ruas (Zona Cinza)
+    if (parent && (parent.classList.contains('street-lane') || parent.closest('.gray-zone') || parent.classList.contains('pallet-row'))) {
+        const laneCode = typeof getTargetLaneCode === 'function' ? getTargetLaneCode(parent) : 'Ruas';
+        return { 
+            status: 'Processando', 
+            area: `Canalização / Rua (${laneCode})` 
+        };
+    }
+
+    return { status: 'Processando', area: 'Área Operacional' };
+}
